@@ -32,6 +32,50 @@ If your plugin does not need CSS, delete this file.
 	word-wrap: break-word;
 }
 
+.chat-message-content {
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.chat-message .markdown-rendered {
+	padding: 0;
+}
+
+.chat-message .markdown-rendered > :first-child {
+	margin-top: 0;
+}
+
+.chat-message .markdown-rendered > :last-child {
+	margin-bottom: 0;
+}
+
+.chat-message.assistant-message .markdown-rendered pre {
+	overflow-x: auto;
+	max-width: 100%;
+}
+
+.chat-message.assistant-message .markdown-rendered code {
+	word-break: break-word;
+}
+
+.chat-message.assistant-message .chat-message-content {
+	overflow-x: auto;
+}
+
+.chat-message.assistant-message .markdown-rendered table {
+	display: table;
+	width: max-content;
+	min-width: 100%;
+	border-collapse: collapse;
+}
+
+.chat-message.assistant-message .markdown-rendered th,
+.chat-message.assistant-message .markdown-rendered td {
+	padding: 6px 8px;
+	border: 1px solid var(--background-modifier-border);
+	white-space: normal;
+}
+
 .chat-message.user-message {
 	background-color: var(--interactive-accent);
 	color: var(--text-on-accent);

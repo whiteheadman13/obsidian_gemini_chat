@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer } from 'obsidian';
 import { GeminiService } from './geminiService';
 import { ChatHistoryService } from './chatHistoryService';
 import type MyPlugin from './main';
@@ -105,6 +105,68 @@ export class ChatView extends ItemView {
 		// Nothing to clean up
 	}
 
+	private isMarkdownTableLine(line: string): boolean {
+		const trimmedLine = line.trim();
+		return trimmedLine.startsWith('|') && trimmedLine.includes('|');
+	}
+
+	private isMarkdownTableSeparator(line: string): boolean {
+		const trimmedLine = line.trim();
+		if (!trimmedLine.startsWith('|')) {
+			return false;
+		}
+		const cells = trimmedLine
+			.split('|')
+			.map((cell) => cell.trim())
+			.filter((cell) => cell.length > 0);
+		if (cells.length === 0) {
+			return false;
+		}
+		return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+	}
+
+	private normalizeMarkdownForRender(content: string): string {
+		const sourceLines = content.replace(/\r\n/g, '\n').split('\n');
+		const normalizedLines = sourceLines.map((line) => line.replace(/^[\u3000\t ]+(?=\|)/, '').replace(/[\t ]+$/g, ''));
+
+		const outputLines: string[] = [];
+		for (let index = 0; index < normalizedLines.length; index += 1) {
+			const currentLine = normalizedLines[index] ?? '';
+			const nextLine = normalizedLines[index + 1] ?? '';
+			const isTableStart = this.isMarkdownTableLine(currentLine) && this.isMarkdownTableSeparator(nextLine);
+
+			if (isTableStart) {
+				if (outputLines.length > 0 && outputLines[outputLines.length - 1]?.trim() !== '') {
+					outputLines.push('');
+				}
+
+				while (index < normalizedLines.length && this.isMarkdownTableLine(normalizedLines[index] ?? '')) {
+					outputLines.push((normalizedLines[index] ?? '').trimStart());
+					index += 1;
+				}
+
+				if (index < normalizedLines.length && (normalizedLines[index] ?? '').trim() !== '') {
+					outputLines.push('');
+				}
+
+				index -= 1;
+				continue;
+			}
+
+			outputLines.push(currentLine);
+		}
+
+		return outputLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+	}
+
+	private async renderAssistantMessage(container: HTMLElement, content: string): Promise<void> {
+		const messageContentEl = container.createEl('div', {
+			cls: 'chat-message-content markdown-rendered',
+		});
+		const normalizedContent = this.normalizeMarkdownForRender(content);
+		await MarkdownRenderer.render(this.app, normalizedContent, messageContentEl, '/', this);
+	}
+
 	private async handleSendMessage(message: string) {
 		if (!message.trim()) return;
 
@@ -119,7 +181,10 @@ export class ChatView extends ItemView {
 			const userMessageEl = this.messagesContainer.createEl('div', {
 				cls: 'chat-message user-message',
 			});
-			userMessageEl.createEl('p', { text: message });
+			const userMessageContentEl = userMessageEl.createEl('div', {
+				cls: 'chat-message-content',
+			});
+			userMessageContentEl.setText(message);
 		}
 
 		// Add to message history
@@ -146,7 +211,7 @@ export class ChatView extends ItemView {
 				const assistantMessageEl = this.messagesContainer.createEl('div', {
 					cls: 'chat-message assistant-message',
 				});
-				assistantMessageEl.createEl('p', { text: response });
+				await this.renderAssistantMessage(assistantMessageEl, response);
 
 				// Add to message history
 				this.messageHistory.push({ role: 'assistant', content: response });
