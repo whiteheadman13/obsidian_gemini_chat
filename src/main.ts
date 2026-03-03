@@ -4,6 +4,12 @@ import {ChatView, CHAT_VIEW_TYPE} from "./chatView";
 import {FileEditService} from "./fileEditService";
 import {DiffView, DIFF_VIEW_TYPE} from "./diffView";
 import { promptForEditRequest } from './editRequestModal';
+import { promptForAgentGoal } from './modals/agentPromptModal';
+import { createAgent } from './agent/adkAgent';
+import { AgentLogView, AGENT_LOG_VIEW_TYPE } from './agentLogView';
+import InteractiveAgentService from './agent/interactiveAgentService';
+import { GeminiService } from './geminiService';
+import { SessionResumeService } from './agent/sessionResumeService';
 
 // Remember to rename these classes and interfaces!
 
@@ -25,6 +31,9 @@ export default class MyPlugin extends Plugin {
 			const view = new DiffView(leaf);
 			return view;
 		});
+
+		// Register the agent log view
+		this.registerView(AGENT_LOG_VIEW_TYPE, (leaf) => new AgentLogView(leaf));
 
 		// Add ribbon icon
 		this.addRibbonIcon('messages-square', 'Open Chat', () => {
@@ -61,6 +70,68 @@ export default class MyPlugin extends Plugin {
 			}
 		});
 
+		// Add command to start the simple autonomous agent
+		this.addCommand({
+			id: 'start-agent',
+			name: 'Start Agent (簡易)',
+			callback: async () => {
+				const res = await promptForAgentGoal(this.app);
+				if (!res) return;
+
+				// Open agent log view
+				const logView = await this.activateAgentLogView();
+
+				// Create agent and connect log view
+				const agent = createAgent(this.app, this, this.settings.geminiApiKey);
+				if (logView) {
+					agent.setLogView(logView);
+				}
+
+				// Run agent
+				await agent.run(res.goal);
+			}
+		});
+
+		// Add command to start the interactive agent
+		this.addCommand({
+			id: 'start-interactive-agent',
+			name: 'Start Interactive Agent (対話型)',
+			callback: async () => {
+				const res = await promptForAgentGoal(this.app);
+				if (!res) return;
+
+				// Open agent log view
+				const logView = await this.activateAgentLogView();
+
+				// Create interactive agent
+				const gemini = this.settings.geminiApiKey ? new GeminiService(this.settings.geminiApiKey) : undefined;
+				const agent = new InteractiveAgentService(this.app, this, res.goal, gemini);
+				
+				if (logView) {
+					agent.setLogView(logView);
+				}
+
+				// Run interactive agent
+				await agent.run();
+			}
+		});
+
+		// Add command to resume agent from current session note
+		this.addCommand({
+			id: 'resume-agent',
+			name: 'Resume Agent (セッション再開)',
+			callback: async () => {
+				// Open agent log view
+				const logView = await this.activateAgentLogView();
+
+				// Create resume service
+				const resumeService = new SessionResumeService(this.app, this);
+				
+				// Resume from current note
+				await resumeService.resumeFromCurrentNote(logView || undefined);
+			}
+		});
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 
@@ -92,6 +163,34 @@ export default class MyPlugin extends Plugin {
 		if (leaf) {
 			workspace.revealLeaf(leaf);
 		}
+	}
+
+	async activateAgentLogView(): Promise<AgentLogView | null> {
+		const { workspace } = this.app;
+		let leaf: WorkspaceLeaf | null = null;
+
+		// Check if the view already exists
+		const leaves = workspace.getLeavesOfType(AGENT_LOG_VIEW_TYPE);
+		if (leaves.length > 0) {
+			leaf = leaves[0] || null;
+		} else {
+			// Create a new leaf in the right sidebar
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (rightLeaf) {
+				leaf = rightLeaf;
+				await leaf.setViewState({
+					type: AGENT_LOG_VIEW_TYPE,
+					active: true,
+				});
+			}
+		}
+
+		if (leaf) {
+			workspace.revealLeaf(leaf);
+			return leaf.view as AgentLogView;
+		}
+
+		return null;
 	}
 
 	async loadSettings() {
