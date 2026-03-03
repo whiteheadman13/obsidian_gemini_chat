@@ -1,89 +1,123 @@
-# Obsidian Sample Plugin
+# Obsidian Gemini Plugin
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Obsidian用のAIアシスタントプラグインです。Google Gemini APIを使用してチャット機能とファイル編集機能を提供します。
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## 主な機能
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+### 1. AIチャット機能
+- サイドバーにチャットビューを表示
+- Gemini APIを使用した自然な会話
+- 会話履歴の保存
 
-## First time developing plugins?
+### 2. AIファイル編集機能（新機能）
+AIを使ってObsidianのノートを編集し、差分（Diff）を確認しながら変更を適用できる機能です。
 
-Quick starting guide for new plugin devs:
+#### 基本ワークフロー
+1. **コマンド実行**: コマンドパレットから「AIでファイルを編集」を選択
+2. **指示入力**: AIへの編集指示を入力（例: "すべての見出しを大文字にする"）
+3. **差分表示**: 新しいペインが開き、左右に元のファイルと修正案を並べて表示
+4. **変更選択**: 上部のコントロールパネルで適用したい変更箇所を選択
+5. **適用**: 「適用」ボタンで選択した変更のみを実際のファイルに反映
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+#### 差分表示の特徴
+- **Split View**: 左ペインに元のファイル、右ペインに修正後のファイルを並べて表示
+- **行番号表示**: 各行に行番号が表示され、変更箇所が一目でわかる
+- **カラーハイライト**:
+  - 削除される行: 赤背景（選択時は濃い赤、非選択時は薄い赤）
+  - 追加される行: 緑背景（選択時は濃い緑、非選択時は薄い緑）
+- **選択的適用**: 変更箇所ごとにチェックボックスで適用/非適用を選択可能
 
-## Releasing new releases
+#### チャット統合機能
+- **現在のファイルを含めて送信**: チャット内で現在編集中のファイルをコンテキストとして送信
+- **この変更を適用ボタン**: AIの応答にコードブロックが含まれている場合、差分ビューに進むボタンが表示される
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+## セットアップ
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+### 1. APIキーの取得
+1. [Google AI Studio](https://makersuite.google.com/app/apikey)にアクセス
+2. APIキーを生成
 
-## Adding your plugin to the community plugin list
+### 2. プラグインの設定
+1. Obsidianの設定を開く
+2. コミュニティプラグインセクションに移動
+3. このプラグインを有効化
+4. プラグイン設定でGemini API Keyを入力
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+## 使い方
 
-## How to use
+### チャット機能
+1. リボンアイコンまたはコマンド「Open Chat」でチャットビューを開く
+2. メッセージを入力して送信
+3. 「現在のファイルを含めて送信」ボタンで、編集中のファイルをAIに見せながら質問できる
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+### ファイル編集機能
+1. 編集したいノートを開く
+2. コマンドパレット（Ctrl/Cmd+P）から「AIでファイルを編集」を選択
+3. 編集指示を入力（例: "箇条書きを番号付きリストに変換"）
+4. 新しいペインで差分ビューが開く
+   - 左側: 元のファイル
+   - 右側: 修正後のファイル
+   - 上部: 変更箇所の選択パネル
+5. 適用したい変更にチェックを入れる
+6. 「適用」ボタンをクリックして変更を反映
 
-## Manually installing the plugin
+#### チャットからの編集
+1. チャットビューでファイルの修正を依頼
+2. AIの応答に「この変更を適用」ボタンが表示される
+3. ボタンをクリックして差分ビューに進む
+4. 変更箇所を確認して適用
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+## 技術仕様
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+- **差分アルゴリズム**: `diff`ライブラリ（jsdiff）を使用
+- **表示方式**: Split View（左右分割ペイン）
+- **部分適用**: Hunk（変更の塊）単位で選択的に適用可能
+- **安全性**: 差分ビューで確認後、ユーザーの明示的な承認で適用
+- **UI**: カスタムItemViewによるネイティブなObsidianペイン統合
 
-## Funding URL
+## 開発
 
-You can include funding URLs where people who use your plugin can financially support it.
+### 必要要件
+- Node.js v16以上
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+### セットアップ
+```bash
+npm install
 ```
 
-If you have multiple URLs, you can also do:
+### 開発モード
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+```bash
+npm run dev
 ```
+
+### ビルド
+
+```bash
+npm run build
+```
+
+## 手動インストール
+
+プラグインを手動でインストールする場合：
+1. `main.js`、`styles.css`、`manifest.json`を Vaultフォルダ内の `.obsidian/plugins/obsidian-gemini/` にコピー
+2. Obsidianを再起動
+3. 設定でプラグインを有効化
+
+## コード品質の向上
+
+このプロジェクトにはESLintが設定されています：
+```bash
+npm run lint
+```
+
+## ライセンス
+
+0-BSD
+
+## 貢献
+
+Issue報告やプルリクエストを歓迎します！
 
 ## API Documentation
 

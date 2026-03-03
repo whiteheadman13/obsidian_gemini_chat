@@ -65,6 +65,11 @@ export class ChatView extends ItemView {
 			text: '送信',
 		});
 
+		const includeFileButton = buttonRow.createEl('button', {
+			cls: 'chat-include-file-button',
+			text: '現在のファイルを含めて送信',
+		});
+
 		const saveButton = buttonRow.createEl('button', {
 			cls: 'chat-save-button',
 			text: '保存',
@@ -77,6 +82,18 @@ export class ChatView extends ItemView {
 
 		sendButton.addEventListener('click', () => {
 			this.handleSendMessage(inputField.value);
+			inputField.value = '';
+		});
+
+		includeFileButton.addEventListener('click', async () => {
+			const activeFile = this.app.workspace.getActiveFile();
+			if (!activeFile) {
+				new Notice('アクティブなファイルがありません');
+				return;
+			}
+			const fileContent = await this.app.vault.read(activeFile);
+			const message = `${inputField.value}\n\n[現在のファイル: ${activeFile.name}]\n\`\`\`\n${fileContent}\n\`\`\``;
+			this.handleSendMessage(message);
 			inputField.value = '';
 		});
 
@@ -213,6 +230,39 @@ export class ChatView extends ItemView {
 				});
 				await this.renderAssistantMessage(assistantMessageEl, response);
 
+				// AIの応答がファイル編集に関連する場合、アクションボタンを追加
+				if (this.isFileEditResponse(response)) {
+					const actionContainer = assistantMessageEl.createEl('div', {
+						cls: 'chat-message-actions',
+					});
+					
+					const applyButton = actionContainer.createEl('button', {
+						cls: 'chat-apply-edit-button',
+						text: 'この変更を適用',
+					});
+					
+					applyButton.addEventListener('click', async () => {
+						const activeFile = this.app.workspace.getActiveFile();
+						if (!activeFile) {
+							new Notice('アクティブなファイルがありません');
+							return;
+						}
+						
+						// 元のファイル内容を取得
+						const oldContent = await this.app.vault.read(activeFile);
+						
+						// AIの応答からコードブロックを抽出
+						const newContent = this.extractCodeFromResponse(response);
+						if (!newContent) {
+							new Notice('修正内容が見つかりませんでした');
+							return;
+						}
+						
+						// DiffViewを表示
+						await this.plugin.fileEditService.showDiffView(activeFile, oldContent, newContent);
+					});
+				}
+
 				// Add to message history
 				this.messageHistory.push({ role: 'assistant', content: response });
 
@@ -235,6 +285,28 @@ export class ChatView extends ItemView {
 			this.plugin.settings.chatHistoryFolder,
 			this.messageHistory
 		);
+	}
+
+	/**
+	 * AIの応答がファイル編集に関連するかをチェック
+	 */
+	private isFileEditResponse(response: string): boolean {
+		// コードブロックが含まれているか、または特定のキーワードがあるかをチェック
+		return response.includes('```') || 
+			   response.toLowerCase().includes('修正') ||
+			   response.toLowerCase().includes('変更');
+	}
+
+	/**
+	 * AIの応答からコードブロックを抽出
+	 */
+	private extractCodeFromResponse(response: string): string | null {
+		// ```で囲まれたコードブロックを抽出
+		const codeBlockMatch = response.match(/```(?:\w+)?\n([\s\S]*?)\n```/);
+		if (codeBlockMatch && codeBlockMatch[1]) {
+			return codeBlockMatch[1];
+		}
+		return null;
 	}
 }
 

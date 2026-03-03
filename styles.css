@@ -105,6 +105,42 @@ If your plugin does not need CSS, delete this file.
 	flex: 1;
 }
 
+.chat-include-file-button {
+	padding: 8px 16px;
+	background-color: var(--interactive-normal);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.chat-include-file-button:hover {
+	background-color: var(--interactive-hover);
+}
+
+.chat-message-actions {
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.chat-apply-edit-button {
+	padding: 6px 12px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.9em;
+	font-weight: 500;
+}
+
+.chat-apply-edit-button:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
 .chat-input {
 	width: 100%;
 	padding: 8px;
@@ -162,4 +198,317 @@ If your plugin does not need CSS, delete this file.
 .chat-clear-button:hover {
 	background-color: var(--background-modifier-error-hover);
 	color: var(--text-on-accent);
+}
+
+/* Diff Modal Styles */
+.diff-modal {
+	width: 80vw;
+	max-width: 1200px;
+}
+
+.diff-modal .modal-content {
+	max-height: 80vh;
+	overflow-y: auto;
+}
+
+.diff-description {
+	color: var(--text-muted);
+	margin-bottom: 16px;
+}
+
+.diff-container {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 16px;
+	background-color: var(--background-primary);
+	max-height: 50vh;
+	overflow-y: auto;
+	margin-bottom: 16px;
+}
+
+.diff-no-changes {
+	text-align: center;
+	color: var(--text-muted);
+	padding: 20px;
+}
+
+.diff-hunk {
+	margin-bottom: 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.diff-hunk-header {
+	background-color: var(--background-secondary);
+	padding: 8px 12px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.diff-hunk-header input[type="checkbox"] {
+	cursor: pointer;
+}
+
+.diff-hunk-title {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.diff-hunk-location {
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.diff-hunk-content {
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+	line-height: 1.5;
+}
+
+.diff-line {
+	padding: 2px 8px;
+	display: flex;
+	white-space: pre-wrap;
+	word-break: break-all;
+}
+
+.diff-line-marker {
+	flex-shrink: 0;
+	width: 20px;
+	text-align: center;
+	font-weight: bold;
+}
+
+.diff-line-text {
+	flex: 1;
+}
+
+.diff-line-add {
+	background-color: rgba(0, 255, 0, 0.1);
+	color: var(--text-normal);
+}
+
+.diff-line-add .diff-line-marker {
+	color: #00ff00;
+}
+
+.diff-line-remove {
+	background-color: rgba(255, 0, 0, 0.1);
+	color: var(--text-normal);
+}
+
+.diff-line-remove .diff-line-marker {
+	color: #ff0000;
+}
+
+.diff-line-context {
+	background-color: transparent;
+	color: var(--text-muted);
+}
+
+.diff-button-container {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+}
+
+.diff-button-container button {
+	padding: 8px 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	background-color: var(--background-secondary);
+	color: var(--text-normal);
+}
+
+.diff-button-container button:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.diff-button-container button.mod-cta {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.diff-button-container button.mod-cta:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+/* Diff View (Split Pane) Styles */
+.diff-view-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 16px;
+	overflow: hidden;
+}
+
+.diff-view-header {
+	margin-bottom: 16px;
+	padding-bottom: 16px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.diff-view-header h3 {
+	margin: 0 0 8px 0;
+	color: var(--text-normal);
+}
+
+.diff-view-description {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: 0.9em;
+}
+
+.diff-control-panel {
+	padding: 12px;
+	background-color: var(--background-secondary);
+	border-radius: 4px;
+	margin-bottom: 16px;
+}
+
+.diff-hunks-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+}
+
+.diff-hunks-title {
+	font-weight: 600;
+	color: var(--text-normal);
+	margin-right: 8px;
+}
+
+.diff-hunk-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	background-color: var(--background-primary);
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.diff-hunk-item input[type="checkbox"] {
+	cursor: pointer;
+}
+
+.diff-hunk-item label {
+	cursor: pointer;
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.diff-hunk-label {
+	font-weight: 500;
+	color: var(--text-normal);
+}
+
+.diff-split-container {
+	display: flex;
+	gap: 2px;
+	flex: 1;
+	overflow: hidden;
+	margin-bottom: 16px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+}
+
+.diff-pane {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background-color: var(--background-primary);
+}
+
+.diff-pane-left {
+	border-right: 1px solid var(--background-modifier-border);
+}
+
+.diff-pane-title {
+	padding: 8px 12px;
+	background-color: var(--background-secondary);
+	font-weight: 600;
+	border-bottom: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+}
+
+.diff-pane-content {
+	flex: 1;
+	overflow-y: auto;
+	font-family: var(--font-monospace);
+	font-size: 0.85em;
+	line-height: 1.6;
+}
+
+.diff-line-container {
+	display: flex;
+	padding: 0;
+	white-space: pre;
+	min-height: 1.6em;
+}
+
+.diff-line-number {
+	flex-shrink: 0;
+	width: 50px;
+	padding: 0 8px;
+	text-align: right;
+	color: var(--text-muted);
+	background-color: var(--background-secondary);
+	border-right: 1px solid var(--background-modifier-border);
+	user-select: none;
+}
+
+.diff-line-content {
+	flex: 1;
+	padding: 0 8px;
+	overflow-x: auto;
+}
+
+/* 削除された行（選択済み） */
+.diff-line-removed-selected {
+	background-color: rgba(255, 0, 0, 0.2);
+}
+
+.diff-line-removed-selected .diff-line-number {
+	background-color: rgba(255, 0, 0, 0.3);
+	color: #ff6b6b;
+}
+
+/* 削除された行（選択解除） */
+.diff-line-removed-unselected {
+	background-color: rgba(255, 0, 0, 0.05);
+	opacity: 0.5;
+}
+
+.diff-line-removed-unselected .diff-line-number {
+	background-color: rgba(255, 0, 0, 0.1);
+}
+
+/* 追加された行（選択済み） */
+.diff-line-added-selected {
+	background-color: rgba(0, 255, 0, 0.15);
+}
+
+.diff-line-added-selected .diff-line-number {
+	background-color: rgba(0, 255, 0, 0.25);
+	color: #51cf66;
+}
+
+/* 追加された行（選択解除） */
+.diff-line-added-unselected {
+	background-color: rgba(0, 255, 0, 0.05);
+	opacity: 0.5;
+}
+
+.diff-line-added-unselected .diff-line-number {
+	background-color: rgba(0, 255, 0, 0.1);
 }
