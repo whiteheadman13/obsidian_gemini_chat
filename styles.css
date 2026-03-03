@@ -1,0 +1,121 @@
+/*
+
+This CSS file will be included with your plugin, and
+available in the app when your plugin is enabled.
+
+If your plugin does not need CSS, delete this file.
+
+*/
+.chat-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: 10px;
+}
+
+.chat-messages {
+	flex: 1;
+	overflow-y: auto;
+	margin-bottom: 10px;
+	padding: 10px;
+	background-color: var(--background-secondary);
+	border-radius: 4px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.chat-message {
+	padding: 10px;
+	border-radius: 4px;
+	max-width: 90%;
+	word-wrap: break-word;
+}
+
+.chat-message.user-message {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	align-self: flex-end;
+	margin-left: 10%;
+}
+
+.chat-message.assistant-message {
+	background-color: var(--background-tertiary);
+	color: var(--text-normal);
+	align-self: flex-start;
+	margin-right: 10%;
+}
+
+.chat-input-container {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.chat-button-row {
+	display: flex;
+	gap: 8px;
+}
+
+.chat-button-row .chat-send-button {
+	flex: 1;
+}
+
+.chat-input {
+	width: 100%;
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-secondary);
+	color: var(--text-normal);
+	font-family: inherit;
+	resize: none;
+}
+
+.chat-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+}
+
+.chat-send-button {
+	padding: 8px 16px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-weight: 500;
+}
+
+.chat-send-button:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.chat-send-button:active {
+	background-color: var(--interactive-accent-active);
+}
+
+.chat-message.error {
+	background-color: var(--text-error);
+	color: var(--text-on-accent);
+}
+
+.chat-message.loading {
+	opacity: 0.7;
+	font-style: italic;
+}
+
+.chat-clear-button {
+	padding: 8px 16px;
+	background-color: var(--background-modifier-error);
+	color: var(--text-error);
+	border: 1px solid var(--background-modifier-error-hover);
+	border-radius: 4px;
+	cursor: pointer;
+	font-weight: 500;
+}
+
+.chat-clear-button:hover {
+	background-color: var(--background-modifier-error-hover);
+	color: var(--text-on-accent);
+}
