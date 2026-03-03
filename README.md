@@ -109,7 +109,7 @@ npm run build
 ## 手動インストール
 
 プラグインを手動でインストールする場合：
-1. `main.js`、`styles.css`、`manifest.json`を Vaultフォルダ内の `.obsidian/plugins/obsidian-gemini/` にコピー
+1. `main.js`、`styles.css`、`manifest.json`を Vaultフォルダ内の `.obsidian/plugins/personal-obsidian-gemini/` にコピー
 2. Obsidianを再起動
 3. 設定でプラグインを有効化
 
