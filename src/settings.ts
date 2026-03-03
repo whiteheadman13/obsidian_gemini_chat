@@ -3,10 +3,12 @@ import MyPlugin from "./main";
 
 export interface MyPluginSettings {
 	geminiApiKey: string;
+	chatHistoryFolder: string;
 }
 
 export const DEFAULT_SETTINGS: MyPluginSettings = {
-	geminiApiKey: ''
+	geminiApiKey: '',
+	chatHistoryFolder: 'Chat History'
 }
 
 export class SampleSettingTab extends PluginSettingTab {
@@ -33,5 +35,16 @@ export class SampleSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 				.inputEl.setAttribute('type', 'password'));
+
+		new Setting(containerEl)
+			.setName('チャット履歴保存先フォルダ')
+			.setDesc('チャット履歴を保存するフォルダパスを指定してください')
+			.addText(text => text
+				.setPlaceholder('Chat History')
+				.setValue(this.plugin.settings.chatHistoryFolder)
+				.onChange(async (value) => {
+					this.plugin.settings.chatHistoryFolder = value;
+					await this.plugin.saveSettings();
+				}));
 	}
 }

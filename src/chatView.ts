@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
 import { GeminiService } from './geminiService';
+import { ChatHistoryService } from './chatHistoryService';
 import type MyPlugin from './main';
 
 export const CHAT_VIEW_TYPE = 'chat-view';
@@ -64,6 +65,11 @@ export class ChatView extends ItemView {
 			text: '送信',
 		});
 
+		const saveButton = buttonRow.createEl('button', {
+			cls: 'chat-save-button',
+			text: '保存',
+		});
+
 		const clearButton = buttonRow.createEl('button', {
 			cls: 'chat-clear-button',
 			text: '履歴をクリア',
@@ -72,6 +78,10 @@ export class ChatView extends ItemView {
 		sendButton.addEventListener('click', () => {
 			this.handleSendMessage(inputField.value);
 			inputField.value = '';
+		});
+
+		saveButton.addEventListener('click', () => {
+			this.handleSaveHistory();
 		});
 
 		clearButton.addEventListener('click', () => {
@@ -152,6 +162,14 @@ export class ChatView extends ItemView {
 				new Notice(`エラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`);
 			}
 		}
+	}
+
+	private async handleSaveHistory() {
+		const chatHistoryService = new ChatHistoryService(this.app);
+		await chatHistoryService.saveChatHistory(
+			this.plugin.settings.chatHistoryFolder,
+			this.messageHistory
+		);
 	}
 }
 
