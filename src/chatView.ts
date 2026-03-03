@@ -184,6 +184,58 @@ export class ChatView extends ItemView {
 		await MarkdownRenderer.render(this.app, normalizedContent, messageContentEl, '/', this);
 	}
 
+	private renderUserMessage(container: HTMLElement, message: string): void {
+		// ファイル内容を含むメッセージかチェック
+		const filePattern = /^(.*?)\n\n\[現在のファイル: (.+?)\]\n```\n([\s\S]*?)\n```$/;
+		const match = message.match(filePattern);
+
+		if (match && match[1] !== undefined && match[2] !== undefined && match[3] !== undefined) {
+			// ファイル内容を含むメッセージ
+			const userText = match[1];
+			const fileName = match[2];
+			const fileContent = match[3];
+
+			// ユーザーのテキスト部分
+			if (userText.trim()) {
+				const textEl = container.createEl('div', {
+					cls: 'chat-message-text',
+					text: userText
+				});
+			}
+
+			// 折りたたみ可能なファイル内容
+			const detailsEl = container.createEl('details', {
+				cls: 'chat-file-details'
+			});
+
+			const summaryEl = detailsEl.createEl('summary', {
+				cls: 'chat-file-summary'
+			});
+			summaryEl.createSpan({ 
+				text: '📄 ',
+				cls: 'chat-file-icon'
+			});
+			summaryEl.createSpan({ 
+				text: fileName,
+				cls: 'chat-file-name'
+			});
+			summaryEl.createSpan({ 
+				text: ` (${fileContent.split('\n').length} 行)`,
+				cls: 'chat-file-lines'
+			});
+
+			const contentEl = detailsEl.createEl('pre', {
+				cls: 'chat-file-content'
+			});
+			contentEl.createEl('code', {
+				text: fileContent
+			});
+		} else {
+			// 通常のメッセージ
+			container.setText(message);
+		}
+	}
+
 	private async handleSendMessage(message: string) {
 		if (!message.trim()) return;
 
@@ -201,7 +253,7 @@ export class ChatView extends ItemView {
 			const userMessageContentEl = userMessageEl.createEl('div', {
 				cls: 'chat-message-content',
 			});
-			userMessageContentEl.setText(message);
+			this.renderUserMessage(userMessageContentEl, message);
 		}
 
 		// Add to message history

@@ -141,6 +141,65 @@ If your plugin does not need CSS, delete this file.
 	background-color: var(--interactive-accent-hover);
 }
 
+/* Chat file details (collapsible) */
+.chat-file-details {
+	margin-top: 8px;
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.chat-file-summary {
+	cursor: pointer;
+	padding: 8px 12px;
+	background-color: rgba(255, 255, 255, 0.1);
+	user-select: none;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-weight: 500;
+}
+
+.chat-file-summary:hover {
+	background-color: rgba(255, 255, 255, 0.15);
+}
+
+.chat-file-icon {
+	font-size: 1em;
+}
+
+.chat-file-name {
+	flex: 1;
+}
+
+.chat-file-lines {
+	opacity: 0.7;
+	font-size: 0.85em;
+}
+
+.chat-file-content {
+	margin: 0;
+	padding: 12px;
+	background-color: rgba(0, 0, 0, 0.2);
+	border-top: 1px solid rgba(255, 255, 255, 0.2);
+	max-height: 400px;
+	overflow-y: auto;
+	font-size: 0.85em;
+	line-height: 1.5;
+}
+
+.chat-file-content code {
+	background: none;
+	padding: 0;
+	white-space: pre;
+	word-break: normal;
+	overflow-wrap: normal;
+}
+
+.chat-message-text {
+	margin-bottom: 8px;
+}
+
 .chat-input {
 	width: 100%;
 	padding: 8px;
