@@ -1,6 +1,7 @@
-import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, TFile } from 'obsidian';
 import { GeminiService } from './geminiService';
 import { ChatHistoryService } from './chatHistoryService';
+import { promptForReferenceFiles } from './chatReferenceModal';
 import type MyPlugin from './main';
 
 export const CHAT_VIEW_TYPE = 'chat-view';
@@ -10,6 +11,9 @@ export class ChatView extends ItemView {
 	private geminiService: GeminiService | null = null;
 	private messageHistory: Array<{ role: string; content: string }> = [];
 	private messagesContainer: HTMLElement | null = null;
+	private inputField: HTMLTextAreaElement | null = null;
+	private referenceFiles: TFile[] = [];
+	private refFilesButton: HTMLButtonElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyPlugin) {
 		super(leaf);
@@ -48,7 +52,7 @@ export class ChatView extends ItemView {
 			cls: 'chat-input-container',
 		});
 
-		const inputField = inputContainer.createEl('textarea', {
+		this.inputField = inputContainer.createEl('textarea', {
 			cls: 'chat-input',
 			attr: {
 				placeholder: 'メッセージを入力... (Ctrl+Enterで送信)',
@@ -60,14 +64,20 @@ export class ChatView extends ItemView {
 			cls: 'chat-button-row',
 		});
 
+		// 参考ファイルボタン（選択済み件数を表示）
+		this.refFilesButton = buttonRow.createEl('button', {
+			cls: 'chat-ref-files-button',
+			text: '参考ファイル',
+		}) as HTMLButtonElement;
+
 		const sendButton = buttonRow.createEl('button', {
 			cls: 'chat-send-button',
 			text: '送信',
 		});
 
-		const includeFileButton = buttonRow.createEl('button', {
-			cls: 'chat-include-file-button',
-			text: '現在のファイルを含めて送信',
+		const editNoteButton = buttonRow.createEl('button', {
+			cls: 'chat-edit-note-button',
+			text: 'AIでノート編集',
 		});
 
 		const saveButton = buttonRow.createEl('button', {
@@ -80,21 +90,46 @@ export class ChatView extends ItemView {
 			text: '履歴をクリア',
 		});
 
-		sendButton.addEventListener('click', () => {
-			this.handleSendMessage(inputField.value);
-			inputField.value = '';
+		this.refFilesButton.addEventListener('click', async () => {
+			const currentPaths = new Set(this.referenceFiles.map((f) => f.path));
+			const result = await promptForReferenceFiles(this.app, currentPaths);
+			if (result !== null) {
+				this.referenceFiles = result.referenceFiles;
+				this.updateRefFilesButton();
+			}
 		});
 
-		includeFileButton.addEventListener('click', async () => {
-			const activeFile = this.app.workspace.getActiveFile();
-			if (!activeFile) {
-				new Notice('アクティブなファイルがありません');
+		sendButton.addEventListener('click', async () => {
+			if (!this.inputField) return;
+			const message = this.inputField.value;
+			if (!message.trim()) return;
+			if (this.referenceFiles.length > 0) {
+				const referenceContents = await Promise.all(
+					this.referenceFiles.map(async (file) => ({
+						path: file.path,
+						content: await this.app.vault.read(file),
+					}))
+				);
+				this.handleSendMessage(this.buildMessageWithReferences(message, referenceContents));
+			} else {
+				this.handleSendMessage(message);
+			}
+			this.inputField.value = '';
+		});
+
+		editNoteButton.addEventListener('click', async () => {
+			if (!this.inputField) return;
+			const instruction = this.inputField.value.trim();
+			if (!instruction) {
+				new Notice('編集の指示をチャット欄に入力してください');
 				return;
 			}
-			const fileContent = await this.app.vault.read(activeFile);
-			const message = `${inputField.value}\n\n[現在のファイル: ${activeFile.name}]\n\`\`\`\n${fileContent}\n\`\`\``;
-			this.handleSendMessage(message);
-			inputField.value = '';
+			if (!this.app.workspace.getActiveFile()) {
+				new Notice('編集対象のファイルを開いてください');
+				return;
+			}
+			await this.plugin.fileEditService.editFileWithAI(instruction, this.referenceFiles);
+			this.inputField.value = '';
 		});
 
 		saveButton.addEventListener('click', () => {
@@ -103,23 +138,32 @@ export class ChatView extends ItemView {
 
 		clearButton.addEventListener('click', () => {
 			this.messageHistory = [];
+			this.referenceFiles = [];
+			this.updateRefFilesButton();
 			if (this.messagesContainer) {
 				this.messagesContainer.empty();
 			}
 			new Notice('会話履歴をクリアしました');
 		});
 
-		// Allow Ctrl+Enter to send message
-		inputField.addEventListener('keydown', (event: KeyboardEvent) => {
-			if (event.ctrlKey && event.key === 'Enter') {
-				this.handleSendMessage(inputField.value);
-				inputField.value = '';
-			}
-		});
+		// Ctrl+Enter で送信（参考ファイルも含む）
+		if (this.inputField) {
+			this.inputField.addEventListener('keydown', (event: KeyboardEvent) => {
+				if (event.ctrlKey && event.key === 'Enter') {
+					sendButton.click();
+				}
+			});
+		}
 	}
 
 	async onClose() {
 		// Nothing to clean up
+	}
+
+	private updateRefFilesButton() {
+		if (!this.refFilesButton) return;
+		const count = this.referenceFiles.length;
+		this.refFilesButton.textContent = count > 0 ? `参考ファイル (${count})` : '参考ファイル';
 	}
 
 	private isMarkdownTableLine(line: string): boolean {
@@ -185,55 +229,102 @@ export class ChatView extends ItemView {
 	}
 
 	private renderUserMessage(container: HTMLElement, message: string): void {
-		// ファイル内容を含むメッセージかチェック
-		const filePattern = /^(.*?)\n\n\[現在のファイル: (.+?)\]\n```\n([\s\S]*?)\n```$/;
-		const match = message.match(filePattern);
-
-		if (match && match[1] !== undefined && match[2] !== undefined && match[3] !== undefined) {
-			// ファイル内容を含むメッセージ
-			const userText = match[1];
-			const fileName = match[2];
-			const fileContent = match[3];
-
-			// ユーザーのテキスト部分
-			if (userText.trim()) {
-				const textEl = container.createEl('div', {
-					cls: 'chat-message-text',
-					text: userText
-				});
-			}
-
-			// 折りたたみ可能なファイル内容
-			const detailsEl = container.createEl('details', {
-				cls: 'chat-file-details'
-			});
-
-			const summaryEl = detailsEl.createEl('summary', {
-				cls: 'chat-file-summary'
-			});
-			summaryEl.createSpan({ 
-				text: '📄 ',
-				cls: 'chat-file-icon'
-			});
-			summaryEl.createSpan({ 
-				text: fileName,
-				cls: 'chat-file-name'
-			});
-			summaryEl.createSpan({ 
-				text: ` (${fileContent.split('\n').length} 行)`,
-				cls: 'chat-file-lines'
-			});
-
-			const contentEl = detailsEl.createEl('pre', {
-				cls: 'chat-file-content'
-			});
-			contentEl.createEl('code', {
-				text: fileContent
-			});
-		} else {
+		// 参考資料を含むメッセージかチェック
+		const hasReferences = message.includes('[参考資料');
+		if (!hasReferences) {
 			// 通常のメッセージ
 			container.setText(message);
+			return;
 		}
+
+		// 最初の[参考資料...]までをテキスト部分とする
+		const referenceIndex = message.indexOf('[参考資料');
+		const textPart = message.substring(0, referenceIndex).trim();
+		const referencesPart = message.substring(referenceIndex);
+
+		// ユーザーのテキスト部分
+		if (textPart) {
+			const textEl = container.createEl('div', {
+				cls: 'chat-message-text',
+				text: textPart
+			});
+			textEl.style.marginBottom = '8px';
+		}
+
+		// 参考資料を表示
+		const referencesLines = referencesPart.split('\n');
+		let i = 0;
+		while (i < referencesLines.length) {
+			const line = referencesLines[i] ?? '';
+			if (line.match(/^\[参考資料.*?:.*?\]$/)) {
+				const detailsEl = container.createEl('details', {
+					cls: 'chat-file-details'
+				});
+
+				const summaryEl = detailsEl.createEl('summary', {
+					cls: 'chat-file-summary'
+				});
+				summaryEl.createSpan({
+					text: '📚 ',
+					cls: 'chat-file-icon'
+				});
+				summaryEl.createSpan({
+					text: line.replace(/^\[|\]$/g, ''),
+					cls: 'chat-file-name'
+				});
+
+				i++;
+				let contentLines: string[] = [];
+				let inCodeBlock = false;
+				while (i < referencesLines.length) {
+					const currentLine = referencesLines[i] ?? '';
+					if (currentLine.includes('```')) {
+						inCodeBlock = !inCodeBlock;
+						if (inCodeBlock) {
+							i++;
+							continue;
+						} else {
+							i++;
+							break;
+						}
+					}
+					if (inCodeBlock) {
+						contentLines.push(currentLine);
+					}
+					i++;
+				}
+
+				if (contentLines.length > 0) {
+					const contentEl = detailsEl.createEl('pre', {
+						cls: 'chat-file-content'
+					});
+					contentEl.createEl('code', {
+						text: contentLines.join('\n')
+					});
+					summaryEl.createSpan({
+						text: ` (${contentLines.length} 行)`,
+						cls: 'chat-file-lines'
+					});
+				}
+			} else {
+				i++;
+			}
+		}
+	}
+
+	private buildMessageWithReferences(
+		userMessage: string,
+		referenceContents: Array<{ path: string; content: string }>
+	): string {
+		if (referenceContents.length === 0) {
+			return userMessage;
+		}
+
+		let message = userMessage;
+		referenceContents.forEach((ref, index) => {
+			message += `\n\n[参考資料 ${index + 1}: ${ref.path}]\n\`\`\`\n${ref.content}\n\`\`\``;
+		});
+		return message;
 	}
 
 	private async handleSendMessage(message: string) {

@@ -1,8 +1,9 @@
-import {Plugin, WorkspaceLeaf} from 'obsidian';
+import { Plugin, WorkspaceLeaf } from 'obsidian';
 import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
 import {ChatView, CHAT_VIEW_TYPE} from "./chatView";
 import {FileEditService} from "./fileEditService";
 import {DiffView, DIFF_VIEW_TYPE} from "./diffView";
+import { promptForEditRequest } from './editRequestModal';
 
 // Remember to rename these classes and interfaces!
 
@@ -49,14 +50,14 @@ export default class MyPlugin extends Plugin {
 					return;
 				}
 
-				// ユーザーに指示を入力してもらう
-				const instruction = await this.promptForInstruction();
-				if (!instruction) {
+				// ユーザーに指示と参考ノートを入力してもらう
+				const request = await promptForEditRequest(this.app, file);
+				if (!request) {
 					return;
 				}
 
 				// FileEditServiceを使って編集
-				await this.fileEditService.editFileWithAI(instruction);
+				await this.fileEditService.editFileWithAI(request.instruction, request.referenceFiles);
 			}
 		});
 
@@ -66,51 +67,6 @@ export default class MyPlugin extends Plugin {
 	}
 
 	onunload() {
-	}
-
-	async promptForInstruction(): Promise<string | null> {
-		return new Promise((resolve) => {
-			const modal = new (require('obsidian').Modal)(this.app);
-			modal.titleEl.setText('AIに指示を入力');
-			
-			const contentEl = modal.contentEl;
-			contentEl.createEl('p', { text: 'ファイルをどのように編集しますか？' });
-			
-			const textarea = contentEl.createEl('textarea', {
-				attr: {
-					placeholder: '例: すべての見出しを大文字にする',
-					rows: '4'
-				}
-			});
-			textarea.style.width = '100%';
-			textarea.style.marginBottom = '10px';
-			
-			const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-			buttonContainer.style.display = 'flex';
-			buttonContainer.style.justifyContent = 'flex-end';
-			buttonContainer.style.gap = '8px';
-			
-			const submitButton = buttonContainer.createEl('button', { 
-				text: '実行',
-				cls: 'mod-cta'
-			});
-			submitButton.addEventListener('click', () => {
-				const value = textarea.value.trim();
-				if (value) {
-					resolve(value);
-					modal.close();
-				}
-			});
-			
-			const cancelButton = buttonContainer.createEl('button', { text: 'キャンセル' });
-			cancelButton.addEventListener('click', () => {
-				resolve(null);
-				modal.close();
-			});
-			
-			modal.open();
-			textarea.focus();
-		});
 	}
 
 	async activateView() {

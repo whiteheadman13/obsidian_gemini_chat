@@ -29,17 +29,18 @@ export class FileEditService {
 	/**
 	 * AIを使ってファイルを編集
 	 */
-	async editFileWithAI(instruction: string): Promise<void> {
+	async editFileWithAI(instruction: string, referenceFiles: TFile[] = []): Promise<void> {
 		const file = this.getActiveFile();
 		if (!file) return;
 
 		try {
 			// ファイルの内容を読み取る
 			const content = await this.app.vault.read(file);
+			const referenceContents = await this.loadReferenceContents(referenceFiles, file.path);
 
 			// AIに修正案を依頼
 			new Notice('AIが修正案を生成中...');
-			const modifiedContent = await this.requestModification(content, instruction);
+			const modifiedContent = await this.requestModification(content, instruction, referenceContents);
 
 			// 差分をチェック
 			if (content === modifiedContent) {
@@ -60,15 +61,27 @@ export class FileEditService {
 	/**
 	 * AIに修正を依頼
 	 */
-	private async requestModification(content: string, instruction: string): Promise<string> {
+	private async requestModification(
+		content: string,
+		instruction: string,
+		referenceNotes: Array<{ path: string; content: string }>
+	): Promise<string> {
+		const referenceSection = this.buildReferenceSection(referenceNotes);
+
 		const prompt = `以下のマークダウンファイルを指示に従って修正してください。
+
+注意:
+- 編集対象は「主要ノート」のみです。
+- 参考資料は文脈理解のための情報です。参考資料自体の内容は出力しないでください。
 
 指示: ${instruction}
 
-元のファイル内容:
+主要ノート（編集対象）:
 \`\`\`
 ${content}
 \`\`\`
+
+${referenceSection}
 
 修正後のファイル全文を出力してください。説明は不要です。コードブロックも不要です。ファイルの内容だけを出力してください。`;
 
@@ -93,6 +106,59 @@ ${content}
 		}
 
 		return cleanedResponse;
+	}
+
+	private async loadReferenceContents(
+		referenceFiles: TFile[],
+		targetPath: string
+	): Promise<Array<{ path: string; content: string }>> {
+		const uniqueFiles = referenceFiles.filter((file, index, arr) => {
+			if (file.path === targetPath) {
+				return false;
+			}
+			return arr.findIndex((candidate) => candidate.path === file.path) === index;
+		});
+
+		const loaded = await Promise.all(
+			uniqueFiles.map(async (file) => ({
+				path: file.path,
+				content: await this.app.vault.read(file),
+			}))
+		);
+
+		return loaded;
+	}
+
+	private buildReferenceSection(referenceNotes: Array<{ path: string; content: string }>): string {
+		if (referenceNotes.length === 0) {
+			return '参考資料: なし';
+		}
+
+		const maxTotalCharacters = 50000;
+		let usedCharacters = 0;
+		const sections: string[] = ['参考資料（複数）:'];
+
+		referenceNotes.forEach((note, index) => {
+			if (usedCharacters >= maxTotalCharacters) {
+				return;
+			}
+
+			const remaining = maxTotalCharacters - usedCharacters;
+			const trimmedContent = note.content.length > remaining
+				? `${note.content.slice(0, Math.max(0, remaining - 20))}\n...`
+				: note.content;
+
+			usedCharacters += trimmedContent.length;
+			sections.push(
+				`[参考資料 ${index + 1}: ${note.path}]\n\`\`\`\n${trimmedContent}\n\`\`\``
+			);
+		});
+
+		if (usedCharacters >= maxTotalCharacters) {
+			sections.push('※ 参考資料が長いため末尾を一部省略しています。');
+		}
+
+		return sections.join('\n\n');
 	}
 
 	/**

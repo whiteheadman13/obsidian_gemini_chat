@@ -105,7 +105,7 @@ If your plugin does not need CSS, delete this file.
 	flex: 1;
 }
 
-.chat-include-file-button {
+.chat-ref-files-button {
 	padding: 8px 16px;
 	background-color: var(--interactive-normal);
 	color: var(--text-normal);
@@ -116,7 +116,27 @@ If your plugin does not need CSS, delete this file.
 	white-space: nowrap;
 }
 
-.chat-include-file-button:hover {
+.chat-ref-files-button:hover {
+	background-color: var(--interactive-hover);
+}
+
+.chat-ref-files-button.has-files {
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
+.chat-edit-note-button {
+	padding: 8px 16px;
+	background-color: var(--interactive-normal);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	cursor: pointer;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.chat-edit-note-button:hover {
 	background-color: var(--interactive-hover);
 }
 
