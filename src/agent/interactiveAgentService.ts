@@ -4,6 +4,7 @@ import type MyPlugin from '../main';
 import type { AgentLogView, FeedbackPromptResult } from '../agentLogView';
 import { AgentSessionNote } from './agentSessionNote';
 import { promptAgentConfirmation } from '../modals/agentConfirmModal';
+import { FolderAccessControl } from '../folderAccessControl';
 
 export class InteractiveAgentService {
     private app: App;
@@ -12,6 +13,7 @@ export class InteractiveAgentService {
     private logView?: AgentLogView;
     private sessionNote: AgentSessionNote;
     private interactive: boolean;
+    private accessControl: FolderAccessControl;
 
     constructor(app: App, plugin: MyPlugin, goal: string, gemini?: GeminiService, interactive: boolean = true) {
         this.app = app;
@@ -19,6 +21,7 @@ export class InteractiveAgentService {
         this.gemini = gemini;
         this.sessionNote = new AgentSessionNote(app, goal);
         this.interactive = interactive;
+        this.accessControl = new FolderAccessControl(plugin.settings);
     }
 
     setLogView(view: AgentLogView) {
@@ -394,9 +397,14 @@ export class InteractiveAgentService {
         this.log('info', `Searching notes for: ${query}`);
         const files = this.app.vault.getMarkdownFiles();
         this.log('info', `Total markdown files: ${files.length}`);
+        
+        // Filter by access control
+        const accessibleFiles = this.accessControl.filterAllowedFiles(files);
+        this.log('info', `Accessible files after access control: ${accessibleFiles.length}`);
+        
         const out: TFile[] = [];
         const q = query.toLowerCase();
-        for (const f of files) {
+        for (const f of accessibleFiles) {
             try {
                 const text = (await this.app.vault.read(f)).toLowerCase();
                 if (f.path.toLowerCase().includes(q) || text.includes(q)) {
@@ -432,8 +440,13 @@ export class InteractiveAgentService {
             .replace(/\s+/g, '_')
             .slice(0, 100);
         const path = `Agent Tasks/${safeTitle}.md`;
-        this.log('info', `Task path: ${path}`);
-        try {
+        this.log('info', `Task path: ${path}`);        
+        // Check if the target path is accessible
+        if (!this.accessControl.isPathAccessAllowed(path)) {
+            this.log('warn', `Access denied for creating task at: ${path}`);
+            throw new Error(`アクセスが許可されていないフォルダです: Agent Tasks`);
+        }
+                try {
             await this.ensureFolder('Agent Tasks');
             await this.app.vault.create(path, `# ${title}\n\n${body}`);
             this.log('success', `Task file created at: ${path}`);

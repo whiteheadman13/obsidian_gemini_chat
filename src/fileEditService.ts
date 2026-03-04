@@ -2,16 +2,19 @@ import { App, Notice, TFile, WorkspaceLeaf } from 'obsidian';
 import { GeminiService } from './geminiService';
 import { DiffView, DIFF_VIEW_TYPE } from './diffView';
 import type MyPlugin from './main';
+import { FolderAccessControl } from './folderAccessControl';
 
 export class FileEditService {
 	private app: App;
 	private geminiService: GeminiService;
 	private plugin: MyPlugin;
+	private accessControl: FolderAccessControl;
 
 	constructor(app: App, apiKey: string, plugin: MyPlugin) {
 		this.app = app;
 		this.geminiService = new GeminiService(apiKey);
 		this.plugin = plugin;
+		this.accessControl = new FolderAccessControl(plugin.settings);
 	}
 
 	/**
@@ -23,6 +26,13 @@ export class FileEditService {
 			new Notice('アクティブなファイルがありません');
 			return null;
 		}
+		
+		// Check access control
+		if (!this.accessControl.isFileAccessAllowed(activeFile)) {
+			new Notice('このファイルへのアクセスは許可されていません');
+			return null;
+		}
+		
 		return activeFile;
 	}
 
@@ -119,8 +129,11 @@ ${referenceSection}
 			return arr.findIndex((candidate) => candidate.path === file.path) === index;
 		});
 
+		// Filter by access control
+		const accessibleFiles = this.accessControl.filterAllowedFiles(uniqueFiles);
+
 		const loaded = await Promise.all(
-			uniqueFiles.map(async (file) => ({
+			accessibleFiles.map(async (file) => ({
 				path: file.path,
 				content: await this.app.vault.read(file),
 			}))
