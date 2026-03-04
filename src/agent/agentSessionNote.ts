@@ -12,6 +12,7 @@ export interface AgentSessionData {
         result?: string;
         userFeedback?: string;
         inputRequired?: string;
+        references?: string[];
     }>;
 }
 
@@ -118,7 +119,7 @@ export class AgentSessionNote {
         }));
     }
 
-    updateStepStatus(step: number, status: 'running' | 'completed' | 'error', result?: string, inputRequired?: string): void {
+    updateStepStatus(step: number, status: 'running' | 'completed' | 'error', result?: string, inputRequired?: string, references?: string[]): void {
         const logEntry = this.sessionData.executionLog[step - 1];
         if (logEntry) {
             logEntry.status = status;
@@ -127,6 +128,9 @@ export class AgentSessionNote {
             }
             if (inputRequired) {
                 logEntry.inputRequired = inputRequired;
+            }
+            if (references && references.length > 0) {
+                logEntry.references = references;
             }
         }
     }
@@ -226,6 +230,16 @@ export class AgentSessionNote {
                 
                 console.log(`[AgentSessionNote] generateNoteContent - Step ${log.step} userFeedback:`, log.userFeedback ? log.userFeedback.substring(0, 50) + '...' : 'empty');
 
+                // Add references section if available
+                if (log.references && log.references.length > 0) {
+                    lines.push('**🔗 References:**');
+                    lines.push('');
+                    log.references.forEach(url => {
+                        lines.push(`- ${url}`);
+                    });
+                    lines.push('');
+                }
+
                 lines.push('---');
                 lines.push('');
             });
@@ -237,6 +251,48 @@ export class AgentSessionNote {
         lines.push('_ここに追加の指示やフィードバックを記入してください：_');
         lines.push('');
         lines.push('');
+
+        // Collect all references from all steps
+        const allReferences: Array<{ step: number; url: string }> = [];
+        for (const log of this.sessionData.executionLog) {
+            if (log.references && log.references.length > 0) {
+                for (const url of log.references) {
+                    allReferences.push({ step: log.step, url });
+                }
+            }
+        }
+
+        // Add all references section at the end
+        if (allReferences.length > 0) {
+            lines.push('');
+            lines.push('---');
+            lines.push('');
+            lines.push('## 📚 All References');
+            lines.push('');
+            
+            // Group by step
+            const referencesByStep = new Map<number, string[]>();
+            for (const ref of allReferences) {
+                if (!referencesByStep.has(ref.step)) {
+                    referencesByStep.set(ref.step, []);
+                }
+                referencesByStep.get(ref.step)!.push(ref.url);
+            }
+            
+            // Output by step
+            for (const [stepNum, urls] of Array.from(referencesByStep.entries()).sort((a, b) => a[0] - b[0])) {
+                const stepDesc = this.sessionData.plan[stepNum - 1] || `Step ${stepNum}`;
+                lines.push(`### Step ${stepNum}: ${stepDesc}`);
+                lines.push('');
+                // Remove duplicates
+                const uniqueUrls = Array.from(new Set(urls));
+                uniqueUrls.forEach(url => {
+                    lines.push(`- ${url}`);
+                });
+                lines.push('');
+            }
+        }
+
         lines.push('');
 
         return lines.join('\n');
@@ -331,8 +387,8 @@ export class AgentSessionNote {
                     
                     console.log(`[AgentSessionNote] Parsing Step ${stepNum}...`);
                     
-                    // Extract result
-                    const resultMatch = stepText.match(/\*\*Result:\*\*\s*\n```\s*\n([\s\S]*?)\n```/);
+                    // Extract result (no longer wrapped in code blocks)
+                    const resultMatch = stepText.match(/\*\*Result:\*\*\s*\n\s*\n([\s\S]*?)(?=\n\s*\n\*\*|$)/);
                     if (resultMatch && resultMatch[1]) {
                         logEntry.result = resultMatch[1].trim();
                         console.log(`[AgentSessionNote] Step ${stepNum} result found`);
@@ -366,6 +422,21 @@ export class AgentSessionNote {
                             }
                         } else {
                             console.log(`[AgentSessionNote] Step ${stepNum} fallback also failed`);
+                        }
+                    }
+                    
+                    // Extract references section
+                    const referencesMatch = stepText.match(/\*\*🔗 References:\*\*\s*\n\s*\n((?:- .+\n?)*)/);
+                    if (referencesMatch && referencesMatch[1]) {
+                        const referencesText = referencesMatch[1];
+                        const urls = referencesText
+                            .split('\n')
+                            .filter(line => line.trim().startsWith('- '))
+                            .map(line => line.replace(/^- /, '').trim())
+                            .filter(url => url);
+                        if (urls.length > 0) {
+                            logEntry.references = urls;
+                            console.log(`[AgentSessionNote] Step ${stepNum} references found: ${urls.length} URLs`);
                         }
                     }
                 }

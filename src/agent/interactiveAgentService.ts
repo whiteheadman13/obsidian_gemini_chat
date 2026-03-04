@@ -97,7 +97,7 @@ export class InteractiveAgentService {
                 // Execute step
                 const executionOption = stepExecutionOptions.get(stepNum);
                 const stepResult = await this.executeStep(step, goal, stepNum, executionOption);
-                this.sessionNote.updateStepStatus(stepNum, 'running', stepResult.result, stepResult.inputRequired);
+                this.sessionNote.updateStepStatus(stepNum, 'running', stepResult.result, stepResult.inputRequired, stepResult.references);
                 await this.sessionNote.update();
 
                 this.log('info', `Step ${stepNum} execution completed, awaiting user approval`);
@@ -196,7 +196,7 @@ export class InteractiveAgentService {
                     }
                     
                     // Now update status - this should preserve the userFeedback we just set
-                    this.sessionNote.updateStepStatus(stepNum, 'completed', stepResult.result, stepResult.inputRequired);
+                    this.sessionNote.updateStepStatus(stepNum, 'completed', stepResult.result, stepResult.inputRequired, stepResult.references);
                     
                     // Verify feedback is still there before saving
                     const verifyEntry = this.sessionNote.getData().executionLog[stepNum - 1];
@@ -271,7 +271,7 @@ export class InteractiveAgentService {
         goal: string,
         stepNum: number,
         options?: { stepInstruction?: string; deepDive?: boolean }
-    ): Promise<{ result: string; inputRequired?: string }> {
+    ): Promise<{ result: string; inputRequired?: string; references?: string[] }> {
         this.log('info', `Executing step: ${step}`);
         
         // Get context from all completed steps
@@ -345,14 +345,17 @@ export class InteractiveAgentService {
                 if (this.gemini) {
                     this.log('info', `Asking Gemini how to execute: ${step}`);
                     const prompt = `【最終ゴール】\n${goal}${completedStepsContext}\n\n【現在のステップ】\n${step}${currentStepInstruction}${executionModeInstruction}\n\n上記の最終ゴールを達成するため、これまでのステップで得られた情報を十分に活用して、現在のステップを実行する方法を具体的に教えてください。既に収集済みの情報については再度質問しないでください。`;
-                    const res = await this.gemini.chat([{ role: 'user', content: prompt }]);
+                    const geminiResult = await this.gemini.chatWithMetadata([{ role: 'user', content: prompt }]);
+                    const res = geminiResult.text;
+                    const references = geminiResult.references;
                     this.log('info', `Gemini advice: ${res.substring(0, 100)}...`);
+                    this.log('info', `References found: ${references.length} URLs`);
                     
                     // Extract input requirements from advice
                     const inputRequired = await this.extractInputRequirements(res, step);
                     
                     new Notice(`アドバイスを取得しました`);
-                    return { result: `Gemini advice:\n\n${res}`, inputRequired: inputRequired || undefined };
+                    return { result: `Gemini advice:\n\n${res}`, inputRequired: inputRequired || undefined, references };
                 } else {
                     this.log('warn', `Skipping step (no Gemini): ${step}`);
                     new Notice(`スキップ: ${step}`);
@@ -555,7 +558,7 @@ ${advice.substring(0, 1000)}
                 const executionOption = stepExecutionOptions.get(stepNum);
                 const stepResult = await this.executeStep(step, goal, stepNum, executionOption);
                 // Update with result but NOT completed status yet - wait for user confirmation
-                this.sessionNote.updateStepStatus(stepNum, 'running', stepResult.result, stepResult.inputRequired);
+                this.sessionNote.updateStepStatus(stepNum, 'running', stepResult.result, stepResult.inputRequired, stepResult.references);
                 await this.sessionNote.update();
 
                 this.log('success', `Step ${stepNum} execution completed, awaiting user confirmation`);
