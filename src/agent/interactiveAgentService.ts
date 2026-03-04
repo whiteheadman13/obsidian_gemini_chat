@@ -11,12 +11,14 @@ export class InteractiveAgentService {
     private gemini?: GeminiService;
     private logView?: AgentLogView;
     private sessionNote: AgentSessionNote;
+    private interactive: boolean;
 
-    constructor(app: App, plugin: MyPlugin, goal: string, gemini?: GeminiService) {
+    constructor(app: App, plugin: MyPlugin, goal: string, gemini?: GeminiService, interactive: boolean = true) {
         this.app = app;
         this.plugin = plugin;
         this.gemini = gemini;
         this.sessionNote = new AgentSessionNote(app, goal);
+        this.interactive = interactive;
     }
 
     setLogView(view: AgentLogView) {
@@ -32,8 +34,9 @@ export class InteractiveAgentService {
 
     async run(): Promise<void> {
         const goal = this.sessionNote.getData().goal;
-        this.log('info', `Starting interactive agent with goal: ${goal}`);
-        new Notice(`対話型エージェント起動: ${goal}`);
+        const modeLabel = this.interactive ? '対話型' : '自動';
+        this.log('info', `Starting ${modeLabel} agent with goal: ${goal}`);
+        new Notice(`${modeLabel}エージェント起動: ${goal}`);
 
         try {
             // Step 1: Create session note
@@ -48,31 +51,34 @@ export class InteractiveAgentService {
             this.log('info', 'Generating plan...');
             const plan = await this.generatePlan(goal);
             this.sessionNote.setPlan(plan);
-            this.sessionNote.setStatus('waiting');
+            this.sessionNote.setStatus(this.interactive ? 'waiting' : 'executing');
             await this.sessionNote.update();
             this.log('success', `Plan generated with ${plan.length} steps`);
 
-            // Step 3: Confirm plan with user
-            const planConfirm = await promptAgentConfirmation(
-                this.app,
-                `計画を生成しました（${plan.length}ステップ）。\n\nセッションノートで計画を確認・編集できます。\n続行しますか？`,
-                false
-            );
+            // Step 3: Confirm plan with user (only in interactive mode)
+            if (this.interactive) {
+                const planConfirm = await promptAgentConfirmation(
+                    this.app,
+                    `計画を生成しました（${plan.length}ステップ）。\n\nセッションノートで計画を確認・編集できます。\n続行しますか？`,
+                    false
+                );
 
-            if (!planConfirm || planConfirm.action === 'cancel') {
-                this.log('warn', 'User cancelled');
-                new Notice('キャンセルされました');
-                return;
+                if (!planConfirm || planConfirm.action === 'cancel') {
+                    this.log('warn', 'User cancelled');
+                    new Notice('キャンセルされました');
+                    return;
+                }
+
+                if (planConfirm.action === 'edit') {
+                    this.log('info', 'User requested to edit note');
+                    new Notice('ノートを編集してください。完了したら「Resume Agent」コマンドでセッションノートから再開してください。');
+                    return;
+                }
+
+                // Read potentially edited plan from note
+                await this.sessionNote.readFromNote();
             }
-
-            if (planConfirm.action === 'edit') {
-                this.log('info', 'User requested to edit note');
-                new Notice('ノートを編集してください。完了したら「Resume Agent」コマンドでセッションノートから再開してください。');
-                return;
-            }
-
-            // Read potentially edited plan from note
-            await this.sessionNote.readFromNote();
+            
             const finalPlan = this.sessionNote.getData().plan;
             this.log('info', `Using plan with ${finalPlan.length} steps`);
 
@@ -100,59 +106,65 @@ export class InteractiveAgentService {
                 this.sessionNote.updateStepStatus(stepNum, 'running', stepResult.result, stepResult.inputRequired, stepResult.references);
                 await this.sessionNote.update();
 
-                this.log('info', `Step ${stepNum} execution completed, awaiting user approval`);
+                this.log('info', `Step ${stepNum} execution completed`);
 
-                // Ask user to confirm the step completed correctly
-                let stepApproved = false;
+                // Ask user to confirm the step completed correctly (only in interactive mode)
+                let stepApproved = !this.interactive; // Auto-approve in non-interactive mode
                 let stepRerunRequested = false;
                 let stepDeepenRequested = false;
                 let userFeedback: string | null = null;
                 
-                if (this.logView) {
-                    const promptMessage = `ステップ ${stepNum} が実行されました。\n\n1) 次のタスクに進む（承認）\n2) タスク再実行（未承認）\n3) 再深掘り（ノート回答ベース）\n\n必要に応じて「📝 Your Answer」欄または下の入力欄に記入してください。`;
+                if (this.interactive) {
+                    this.log('info', 'Awaiting user approval...');
                     
-                    const decision: FeedbackPromptResult = await this.logView.showFeedbackPrompt(promptMessage);
-                    stepApproved = decision.action === 'continue';
-                    stepRerunRequested = decision.action === 'rerun';
-                    stepDeepenRequested = decision.action === 'deepen';
-                    
-                    // Re-read note to get the latest user input AFTER user clicks continue
-                    this.log('info', 'Re-reading note to capture user edits...');
-                    await this.sessionNote.readFromNote();
-                    const latestEntry = this.sessionNote.getData().executionLog[stepNum - 1];
-                    
-                    // Check both note content and log view input
-                    const noteAnswer = latestEntry?.userFeedback || null;
-                    const logViewAnswer = decision.feedback && decision.feedback.trim() ? decision.feedback : null;
-                    
-                    // Prefer note answer if it exists, otherwise use log view answer
-                    userFeedback = noteAnswer || logViewAnswer;
-                    
-                    this.log('info', `Note answer: ${noteAnswer ? noteAnswer.substring(0, 50) + '...' : 'none'}`);
-                    this.log('info', `Log view answer: ${logViewAnswer ? logViewAnswer.substring(0, 50) + '...' : 'none'}`);
-                    this.log('info', `Final feedback: ${userFeedback ? userFeedback.substring(0, 50) + '...' : 'none'}`);
-                } else {
-                    // Fallback to modal if no log view
-                    const stepConfirm = await promptAgentConfirmation(
-                        this.app,
-                        `ステップ ${stepNum} が実行されました。\n\n結果をセッションノートで確認してください。\nこのステップは正しく完了していますか？`,
-                        true
-                    );
+                    if (this.logView) {
+                        const promptMessage = `ステップ ${stepNum} が実行されました。\n\n1) 次のタスクに進む（承認）\n2) タスク再実行（未承認）\n3) 再深掘り（ノート回答ベース）\n\n必要に応じて「📝 Your Answer」欄または下の入力欄に記入してください。`;
+                        
+                        const decision: FeedbackPromptResult = await this.logView.showFeedbackPrompt(promptMessage);
+                        stepApproved = decision.action === 'continue';
+                        stepRerunRequested = decision.action === 'rerun';
+                        stepDeepenRequested = decision.action === 'deepen';
+                        
+                        // Re-read note to get the latest user input AFTER user clicks continue
+                        this.log('info', 'Re-reading note to capture user edits...');
+                        await this.sessionNote.readFromNote();
+                        const latestEntry = this.sessionNote.getData().executionLog[stepNum - 1];
+                        
+                        // Check both note content and log view input
+                        const noteAnswer = latestEntry?.userFeedback || null;
+                        const logViewAnswer = decision.feedback && decision.feedback.trim() ? decision.feedback : null;
+                        
+                        // Prefer note answer if it exists, otherwise use log view answer
+                        userFeedback = noteAnswer || logViewAnswer;
+                        
+                        this.log('info', `Note answer: ${noteAnswer ? noteAnswer.substring(0, 50) + '...' : 'none'}`);
+                        this.log('info', `Log view answer: ${logViewAnswer ? logViewAnswer.substring(0, 50) + '...' : 'none'}`);
+                        this.log('info', `Final feedback: ${userFeedback ? userFeedback.substring(0, 50) + '...' : 'none'}`);
+                    } else {
+                        // Fallback to modal if no log view
+                        const stepConfirm = await promptAgentConfirmation(
+                            this.app,
+                            `ステップ ${stepNum} が実行されました。\n\n結果をセッションノートで確認してください。\nこのステップは正しく完了していますか？`,
+                            true
+                        );
 
-                    if (stepConfirm && (stepConfirm.action === 'continue' || stepConfirm.action === 'skip')) {
-                        stepApproved = true;
-                    } else if (!stepConfirm || stepConfirm.action === 'cancel') {
-                        this.log('warn', 'User rejected step completion');
-                        new Notice('ステップが承認されませんでした。実行を中断します。');
-                        this.sessionNote.setStatus('waiting');
-                        await this.sessionNote.update();
-                        return;
-                    } else if (stepConfirm.action === 'edit') {
-                        this.log('info', 'User requested to edit note');
-                        new Notice('ノートを編集してください。完了したら「Resume Agent」コマンドでセッションノートから再開してください。');
-                        this.sessionNote.setStatus('waiting');
-                        await this.sessionNote.update();
-                        return;
+                        if (stepConfirm && (stepConfirm.action === 'continue' || stepConfirm.action === 'skip')) {
+                            stepApproved = true;
+                        } else if (!stepConfirm || stepConfirm.action === 'cancel') {
+                            this.log('warn', 'User rejected step completion');
+                            new Notice('ステップが承認されませんでした。実行を中断します。');
+                            this.sessionNote.setStatus('waiting');
+                            await this.sessionNote.update();
+                            return;
+                        } else if (stepConfirm.action === 'edit') {
+                            this.log('info', 'User requested to edit note');
+                            new Notice('ノートを編集してください。完了したら「Resume Agent」コマンドでセッションノートから再開してください。');
+                            this.sessionNote.setStatus('waiting');
+                            await this.sessionNote.update();
+                            return;
+                        }
+
+                        userFeedback = stepConfirm?.feedback || null;
                     }
                 }
 
@@ -179,44 +191,45 @@ export class InteractiveAgentService {
                     continue;
                 }
 
-                // If step was approved, mark it as completed
-                if (stepApproved) {
-                    stepExecutionOptions.delete(stepNum);
-                    // Ensure userFeedback is saved to the log entry BEFORE updating status
-                    const logEntry = this.sessionNote.getData().executionLog[stepNum - 1];
-                    if (logEntry) {
-                        if (userFeedback && userFeedback.trim()) {
-                            logEntry.userFeedback = userFeedback;
-                            this.log('info', `Saved user feedback to logEntry: ${userFeedback.substring(0, 50)}...`);
-                        } else if (logEntry.userFeedback) {
-                            this.log('info', `logEntry already has feedback: ${logEntry.userFeedback.substring(0, 50)}...`);
-                        } else {
-                            this.log('info', 'No user feedback to save');
-                        }
-                    }
-                    
-                    // Now update status - this should preserve the userFeedback we just set
-                    this.sessionNote.updateStepStatus(stepNum, 'completed', stepResult.result, stepResult.inputRequired, stepResult.references);
-                    
-                    // Verify feedback is still there before saving
-                    const verifyEntry = this.sessionNote.getData().executionLog[stepNum - 1];
-                    this.log('info', `Before update: userFeedback = ${verifyEntry?.userFeedback ? verifyEntry.userFeedback.substring(0, 50) + '...' : 'empty'}`);
-                    
-                    await this.sessionNote.update();
-                    
-                    if (userFeedback && userFeedback.trim()) {
-                        new Notice('✅ 回答を保存しました。セッションノートで確認できます。');
-                    }
-                    
-                    this.log('success', `Step ${stepNum} approved and marked as completed`);
-                } else {
-                    // Step was not approved
+                if (!stepApproved) {
+                    // Step was not approved (only happens in interactive mode)
                     this.log('warn', `Step ${stepNum} was not approved`);
                     new Notice('ステップが承認されませんでした。実行を中断します。');
                     this.sessionNote.setStatus('waiting');
                     await this.sessionNote.update();
                     return;
                 }
+
+                // Step was approved, mark it as completed
+                stepExecutionOptions.delete(stepNum);
+                
+                // Ensure userFeedback is saved to the log entry BEFORE updating status
+                const logEntry = this.sessionNote.getData().executionLog[stepNum - 1];
+                if (logEntry) {
+                    if (userFeedback && userFeedback.trim()) {
+                        logEntry.userFeedback = userFeedback;
+                        this.log('info', `Saved user feedback to logEntry: ${userFeedback.substring(0, 50)}...`);
+                    } else if (logEntry.userFeedback) {
+                        this.log('info', `logEntry already has feedback: ${logEntry.userFeedback.substring(0, 50)}...`);
+                    } else {
+                        this.log('info', 'No user feedback to save');
+                    }
+                }
+                
+                // Now update status - this should preserve the userFeedback we just set
+                this.sessionNote.updateStepStatus(stepNum, 'completed', stepResult.result, stepResult.inputRequired, stepResult.references);
+                
+                // Verify feedback is still there before saving
+                const verifyEntry = this.sessionNote.getData().executionLog[stepNum - 1];
+                this.log('info', `Before update: userFeedback = ${verifyEntry?.userFeedback ? verifyEntry.userFeedback.substring(0, 50) + '...' : 'empty'}`);
+                
+                await this.sessionNote.update();
+                
+                if (userFeedback && userFeedback.trim()) {
+                    new Notice('✅ 回答を保存しました。セッションノートで確認できます。');
+                }
+                
+                this.log('success', `Step ${stepNum} approved and marked as completed`);
             }
 
             // All steps completed
@@ -237,7 +250,15 @@ export class InteractiveAgentService {
         this.log('info', `Planning with Gemini: ${!!this.gemini}`);
         if (this.gemini) {
             try {
-                const prompt = `あなたはエージェントです。与えられたゴールを達成するための短い実行可能な手順を出してください。各ステップは1行で、番号や記号なしで記述してください。3〜6個のステップを出してください。ゴール: ${goal}`;
+                const prompt = `あなたはエージェントです。与えられたゴールを達成するための実行可能な手順を出してください。
+
+【できること】
+- Obsidian Vault内のノート検索・要約・タスク作成
+- Geminiを使った情報取得・分析（Google検索を含む）
+
+各ステップは1行で、番号や記号なしで記述してください。3〜6個のステップを出してください。
+
+ゴール: ${goal}`;
                 this.log('info', 'Sending plan request to Gemini');
                 const txt = await this.gemini.chat([{ role: 'user', content: prompt }]);
                 this.log('info', `Gemini response: ${txt.substring(0, 100)}...`);

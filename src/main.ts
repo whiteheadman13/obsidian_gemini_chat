@@ -7,8 +7,6 @@ import { promptForEditRequest } from './editRequestModal';
 import { promptForAgentGoal } from './modals/agentPromptModal';
 import { createAgent } from './agent/adkAgent';
 import { AgentLogView, AGENT_LOG_VIEW_TYPE } from './agentLogView';
-import InteractiveAgentService from './agent/interactiveAgentService';
-import { GeminiService } from './geminiService';
 import { SessionResumeService } from './agent/sessionResumeService';
 
 // Remember to rename these classes and interfaces!
@@ -73,7 +71,7 @@ export default class MyPlugin extends Plugin {
 		// Add command to start the simple autonomous agent
 		this.addCommand({
 			id: 'start-agent',
-			name: 'Start Agent (簡易)',
+			name: 'Start Agent（対話なし）',
 			callback: async () => {
 				const res = await promptForAgentGoal(this.app);
 				if (!res) return;
@@ -81,14 +79,14 @@ export default class MyPlugin extends Plugin {
 				// Open agent log view
 				const logView = await this.activateAgentLogView();
 
-				// Create agent and connect log view
-				const agent = createAgent(this.app, this, this.settings.geminiApiKey);
+				// Create non-interactive agent (interactive = false)
+				const agent = createAgent(this.app, this, res.goal, this.settings.geminiApiKey, false);
 				if (logView) {
 					agent.setLogView(logView);
 				}
 
 				// Run agent
-				await agent.run(res.goal);
+				await agent.run();
 			}
 		});
 
@@ -103,9 +101,8 @@ export default class MyPlugin extends Plugin {
 				// Open agent log view
 				const logView = await this.activateAgentLogView();
 
-				// Create interactive agent
-				const gemini = this.settings.geminiApiKey ? new GeminiService(this.settings.geminiApiKey) : undefined;
-				const agent = new InteractiveAgentService(this.app, this, res.goal, gemini);
+				// Create interactive agent (interactive = true by default)
+				const agent = createAgent(this.app, this, res.goal, this.settings.geminiApiKey, true);
 				
 				if (logView) {
 					agent.setLogView(logView);

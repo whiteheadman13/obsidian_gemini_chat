@@ -43,7 +43,7 @@ export class SessionResumeService {
 
         const sessionData = sessionNote.getData();
 
-        // Create interactive agent
+        // Create interactive agent (resume always uses interactive mode)
         const gemini = this.plugin.settings.geminiApiKey 
             ? new GeminiService(this.plugin.settings.geminiApiKey) 
             : undefined;
@@ -52,7 +52,8 @@ export class SessionResumeService {
             this.app, 
             this.plugin, 
             sessionData.goal, 
-            gemini
+            gemini,
+            true // Resume is always interactive
         );
 
         if (logView) {

@@ -20,9 +20,23 @@ class AgentPromptModal extends Modal {
 
         this.titleEl.setText('エージェントに指示（ゴール）を入力');
 
+        // Add description
+        const desc = contentEl.createDiv();
+        desc.style.marginBottom = '16px';
+        desc.style.fontSize = '0.9em';
+        desc.style.color = 'var(--text-muted)';
+        desc.innerHTML = `
+            <p style="margin-bottom: 8px;"><strong>このエージェントができること：</strong></p>
+            <ul style="margin: 0; padding-left: 20px;">
+                <li>Vault内のノートを検索・要約</li>
+                <li>タスクノートを作成</li>
+                <li><strong>Gemini経由でWeb検索・最新情報取得</strong></li>
+            </ul>
+        `;
+
         this.inputEl = contentEl.createEl('input') as HTMLInputElement;
         this.inputEl.type = 'text';
-        this.inputEl.placeholder = '例: 今日の未完タスクを収集して短いToDoにまとめてください';
+        this.inputEl.placeholder = '例: 2026年2月の重要なAI関連ニュースを5つまとめて';
         this.inputEl.style.width = '100%';
         this.inputEl.style.marginBottom = '10px';
 
