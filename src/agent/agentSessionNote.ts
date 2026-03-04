@@ -2,6 +2,7 @@ import { App, TFile } from 'obsidian';
 
 export interface AgentSessionData {
     goal: string;
+    templateReference?: string;
     status: 'planning' | 'executing' | 'waiting' | 'completed' | 'error';
     plan: string[];
     currentStep: number;
@@ -13,18 +14,21 @@ export interface AgentSessionData {
         userFeedback?: string;
         inputRequired?: string;
         references?: string[];
+        referencedInstructions?: string[];
     }>;
 }
 
 export class AgentSessionNote {
     private app: App;
     private file: TFile | null = null;
+    private sessionFolderPath?: string;
     private sessionData: AgentSessionData;
 
     constructor(app: App, goal: string) {
         this.app = app;
         this.sessionData = {
             goal,
+            templateReference: undefined,
             status: 'planning',
             plan: [],
             currentStep: 0,
@@ -38,15 +42,18 @@ export class AgentSessionNote {
             .replace(/[:\\/*?"<>|]/g, '-')
             .slice(0, 50);
         const filename = `Agent_Session_${timestamp}_${safeGoal}.md`;
-        const path = `Agent Sessions/${filename}`;
+        const baseName = filename.replace(/\.md$/i, '');
+        const folderPath = `Agent Sessions/${baseName}`;
 
-        // Ensure folder exists
-        await this.ensureFolder('Agent Sessions');
+        // Ensure session folder exists
+        await this.ensureFolder(folderPath);
 
         // Create initial note content
         const content = this.generateNoteContent();
 
+        const path = `${folderPath}/${filename}`;
         this.file = await this.app.vault.create(path, content);
+        this.sessionFolderPath = folderPath;
         return this.file;
     }
 
@@ -99,14 +106,33 @@ export class AgentSessionNote {
 
     setFile(file: TFile): void {
         this.file = file;
+        // If file is inside a folder, set sessionFolderPath accordingly
+        try {
+            const parts = file.path.split('/');
+            if (parts.length >= 2) {
+                // folder path is everything except the last element
+                parts.pop();
+                this.sessionFolderPath = parts.join('/');
+            }
+        } catch (e) {
+            // ignore
+        }
     }
 
     getData(): AgentSessionData {
         return this.sessionData;
     }
 
+    getSessionFolderPath(): string | undefined {
+        return this.sessionFolderPath;
+    }
+
     setStatus(status: AgentSessionData['status']): void {
         this.sessionData.status = status;
+    }
+
+    setTemplateReference(templatePath?: string): void {
+        this.sessionData.templateReference = templatePath?.trim() || undefined;
     }
 
     setPlan(plan: string[]): void {
@@ -116,7 +142,19 @@ export class AgentSessionNote {
             step: idx + 1,
             description: desc,
             status: 'pending',
+            referencedInstructions: [],
         }));
+    }
+
+    setStepReferencedInstructions(step: number, instructions: string[]): void {
+        const logEntry = this.sessionData.executionLog[step - 1];
+        if (!logEntry) return;
+
+        const normalized = instructions
+            .map((instruction) => instruction.trim())
+            .filter((instruction) => instruction.length > 0);
+
+        logEntry.referencedInstructions = Array.from(new Set(normalized));
     }
 
     updateStepStatus(step: number, status: 'running' | 'completed' | 'error', result?: string, inputRequired?: string, references?: string[]): void {
@@ -146,6 +184,9 @@ export class AgentSessionNote {
         lines.push('---');
         lines.push('agent-session: true');
         lines.push(`goal: "${this.sessionData.goal.replace(/"/g, '\\"')}"`);
+        if (this.sessionData.templateReference) {
+            lines.push(`template-note: "${this.sessionData.templateReference.replace(/"/g, '\\"')}"`);
+        }
         lines.push(`status: ${this.sessionData.status}`);
         lines.push(`current-step: ${this.sessionData.currentStep}`);
         lines.push('---');
@@ -159,6 +200,11 @@ export class AgentSessionNote {
         lines.push('## 🎯 Goal');
         lines.push('');
         lines.push(this.sessionData.goal);
+        lines.push('');
+
+        lines.push('## 📄 Template Reference');
+        lines.push('');
+        lines.push(this.sessionData.templateReference ? this.sessionData.templateReference : '_未指定（テンプレートなし）_');
         lines.push('');
 
         // Status indicator
@@ -219,6 +265,17 @@ export class AgentSessionNote {
                     lines.push(log.inputRequired);
                     lines.push('');
                 }
+
+                lines.push('**📌 Referenced Instructions:**');
+                lines.push('');
+                if (log.referencedInstructions && log.referencedInstructions.length > 0) {
+                    log.referencedInstructions.forEach((instruction) => {
+                        lines.push(`- ${instruction}`);
+                    });
+                } else {
+                    lines.push('- なし');
+                }
+                lines.push('');
                 
                 // Always show answer section for user feedback
                 lines.push('**📝 Your Answer:**');
@@ -319,6 +376,8 @@ export class AgentSessionNote {
                     this.sessionData.status = value as AgentSessionData['status'];
                 } else if (key === 'current-step') {
                     this.sessionData.currentStep = parseInt(value) || 0;
+                } else if (key === 'template-note') {
+                    this.sessionData.templateReference = value || undefined;
                 }
             }
         }
@@ -437,6 +496,20 @@ export class AgentSessionNote {
                         if (urls.length > 0) {
                             logEntry.references = urls;
                             console.log(`[AgentSessionNote] Step ${stepNum} references found: ${urls.length} URLs`);
+                        }
+                    }
+
+                    const instructionMatch = stepText.match(/\*\*📌 Referenced Instructions:\*\*\s*\n\s*\n([\s\S]*?)(?=\n\s*\n\*\*|$)/);
+                    if (instructionMatch && instructionMatch[1]) {
+                        const instructionLines = instructionMatch[1]
+                            .split('\n')
+                            .map((line) => line.trim())
+                            .filter((line) => line.startsWith('- '))
+                            .map((line) => line.replace(/^-\s*/, '').trim())
+                            .filter((line) => line && line !== 'なし');
+
+                        if (instructionLines.length > 0) {
+                            logEntry.referencedInstructions = Array.from(new Set(instructionLines));
                         }
                     }
                 }

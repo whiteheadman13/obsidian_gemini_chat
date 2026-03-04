@@ -73,14 +73,20 @@ export default class MyPlugin extends Plugin {
 			id: 'start-agent',
 			name: 'Start Agent（対話なし）',
 			callback: async () => {
-				const res = await promptForAgentGoal(this.app);
+				const res = await promptForAgentGoal(this.app, {
+					templateFolder: this.settings.agentTemplateFolder,
+					defaultTemplatePath: this.settings.agentTemplateFile,
+				});
 				if (!res) return;
 
 				// Open agent log view
 				const logView = await this.activateAgentLogView();
 
+				// Use selected template or fallback to settings
+				const templatePath = res.templatePath || this.settings.agentTemplateFile;
+
 				// Create non-interactive agent (interactive = false)
-				const agent = createAgent(this.app, this, res.goal, this.settings.geminiApiKey, false);
+				const agent = createAgent(this.app, this, res.goal, this.settings.geminiApiKey, false, templatePath);
 				if (logView) {
 					agent.setLogView(logView);
 				}
@@ -95,14 +101,20 @@ export default class MyPlugin extends Plugin {
 			id: 'start-interactive-agent',
 			name: 'Start Interactive Agent (対話型)',
 			callback: async () => {
-				const res = await promptForAgentGoal(this.app);
+				const res = await promptForAgentGoal(this.app, {
+					templateFolder: this.settings.agentTemplateFolder,
+					defaultTemplatePath: this.settings.agentTemplateFile,
+				});
 				if (!res) return;
 
 				// Open agent log view
 				const logView = await this.activateAgentLogView();
 
+				// Use selected template or fallback to settings
+				const templatePath = res.templatePath || this.settings.agentTemplateFile;
+
 				// Create interactive agent (interactive = true by default)
-				const agent = createAgent(this.app, this, res.goal, this.settings.geminiApiKey, true);
+				const agent = createAgent(this.app, this, res.goal, this.settings.geminiApiKey, true, templatePath);
 				
 				if (logView) {
 					agent.setLogView(logView);

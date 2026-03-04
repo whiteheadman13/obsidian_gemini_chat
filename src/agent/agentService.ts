@@ -3,7 +3,9 @@ import { GeminiService } from '../geminiService';
 import type MyPlugin from '../main';
 import type { AgentLogView } from '../agentLogView';
 import { AgentSessionNote } from './agentSessionNote';
+import { promptForStepExecution } from '../modals/stepExecuteModal';
 import { FolderAccessControl } from '../folderAccessControl';
+import { AgentTools } from './agentTools';
 
 export class AgentService {
     private app: App;
@@ -13,6 +15,7 @@ export class AgentService {
     private goal: string;
     private sessionNote: AgentSessionNote;
     private accessControl: FolderAccessControl;
+    private agentTools: AgentTools;
 
     constructor(app: App, plugin: MyPlugin, goal: string, gemini?: GeminiService) {
         this.app = app;
@@ -21,6 +24,15 @@ export class AgentService {
         this.gemini = gemini;
         this.sessionNote = new AgentSessionNote(app, goal);
         this.accessControl = new FolderAccessControl(plugin.settings);
+        this.agentTools = new AgentTools(
+            app,
+            gemini || null,
+            this.accessControl,
+            async (title, body) => {
+                const file = await this.createTask(title, body);
+                return file.path;
+            }
+        );
     }
 
     setLogView(view: AgentLogView) {
@@ -69,7 +81,7 @@ export class AgentService {
                 this.log('info', `Step ${stepNum}/${plan.length}: ${step}`);
                 new Notice(`ステップ ${stepNum}/${plan.length}: ${step}`);
                 
-                const result = await this.executeStep(step, this.goal);
+                const result = await this.executeStep(step, this.goal, stepNum);
                 
                 this.sessionNote.updateStepStatus(stepNum, 'completed', result);
                 await this.sessionNote.update();
@@ -143,80 +155,92 @@ export class AgentService {
         ];
     }
 
-    private async executeStep(step: string, goal: string): Promise<string> {
+    private async executeStep(step: string, goal: string, stepNum: number): Promise<string> {
         this.log('info', `Executing step: ${step}`);
-        let result = '';
+        
+        // Ask user to confirm step execution and choose web search option
+        const stepExecution = await promptForStepExecution(this.app, stepNum, step);
+        if (!stepExecution || stepExecution.action === 'cancel') {
+            this.log('warn', 'User cancelled step execution');
+            new Notice('ステップの実行がキャンセルされました');
+            throw new Error('Step execution cancelled by user');
+        }
+
+        const needsWebSearch = stepExecution.useWebSearch;
+        this.log('info', `User selected: ${needsWebSearch ? 'Web Search mode' : 'Vault Tools mode'}`);
+        
         try {
-            // Normalize step text for pattern matching
-            const normalizedStep = step.toLowerCase();
-            
-            // Pattern 1: Search actions
-            if (/検索|search|探|find/i.test(step)) {
-                this.log('info', 'Action: search');
-                const hits = await this.searchNotes(goal);
-                this.log('success', `Search results: ${hits.length} files`);
-                new Notice(`検索結果: ${hits.length} 件`);
-                result = `検索完了: ${hits.length}件のファイルを発見\n` + hits.map(f => `- [[${f.basename}]]`).join('\n');
-            }
-            // Pattern 2: Summarize actions 
-            else if (/要約|まとめ|summariz|summary|整理|レビュー/i.test(step)) {
-                this.log('info', 'Action: summarize');
-                const hits = await this.searchNotes(goal);
-                const first = hits[0];
-                if (first) {
-                    this.log('info', `Summarizing: ${first.path}`);
-                    const s = await this.summarizeFile(first);
-                    this.log('success', `Summary: ${s.substring(0, 100)}...`);
-                    new Notice(`要約: ${s.substring(0, 120)}...`);
-                    result = `要約対象: [[${first.basename}]]\n\n${s}`;
-                } else {
-                    this.log('warn', 'No files to summarize');
-                    new Notice('要約対象のファイルがありません');
-                    result = '要約対象のファイルがありません';
-                }
-            }
-            // Pattern 3: Create task/todo/list actions
-            else if (/作成|create|task|todo|タスク|リスト|list|書|生成/i.test(step)) {
-                this.log('info', 'Action: create task');
-                const hits = await this.searchNotes(goal);
-                const first = hits[0];
-                const based = first ? `参考: [[${first.basename}]]\n\n` : '';
-                const body = `# ${goal}\n\n${based}## タスク\n- [ ] ${goal}に関する調査\n- [ ] 次のアクションを決定`;
-                const taskFile = await this.createTask(`Agent task - ${new Date().toISOString()}`, body);
-                this.log('success', 'Task created');
-                new Notice('タスクを作成しました ✓');
-                result = `タスク作成完了: [[${taskFile.basename}]]`;
-            }
-            // Pattern 4: If Gemini is available, ask it to help execute the step
-            else if (this.gemini) {
-                this.log('info', 'Action: Ask Gemini for guidance');
-                const vaultContext = await this.getVaultContext(goal);
-                const prompt = `【タスク】${step}
-
-【ゴール】${goal}
-
-【Vault内の関連情報】
-${vaultContext}
-
-上記のタスクを、Vault内の既存情報を使って実行してください。具体的な結果や提案を200字以内で簡潔に出力してください。`;
-                
-                const res = await this.gemini.chat([{ role: 'user', content: prompt }]);
-                this.log('info', `Gemini execution result: ${res.substring(0, 100)}...`);
-                new Notice(`実行完了: ${res.substring(0, 80)}...`);
-                result = res;
-            }
-            // Pattern 5: No Gemini, just skip
-            else {
-                this.log('warn', `Cannot execute step (no Gemini): ${step}`);
+            if (!this.gemini) {
+                this.log('warn', `Skipping step (no Gemini): ${step}`);
                 new Notice(`スキップ: ${step}`);
-                result = 'スキップ（Gemini APIキーが設定されていません）';
+                return 'スキップ（Gemini APIキーが設定されていません）';
+            }
+
+            if (needsWebSearch) {
+                this.log('info', 'Using Google Search (web search mode)');
+                const prompt = `【最終ゴール】
+${goal}
+
+【現在のステップ】
+${step}
+
+上記のステップを実行してください。Web検索を使って最新情報を調べ、結果を日本語で報告してください。`;
+
+                const res = await this.gemini.chat([{ role: 'user', content: prompt }]);
+                this.log('info', `Web search result: ${res.substring(0, 100)}...`);
+                
+                new Notice(`Web検索完了`);
+                return res;
+            } else {
+                this.log('info', 'Using Function Calling (Vault tools mode)');
+                
+                const toolDeclarations = this.agentTools.getToolDeclarations();
+                
+                const systemPrompt = `あなたは Obsidian Vault 内でタスクを実行するエージェントです。
+
+以下のツールを使ってステップを実行してください：
+- search_notes: ノートをキーワード検索
+- read_note: 特定のノートの内容を読む
+- summarize_note: ノートを要約
+- create_note: 新しいノートを作成
+
+ステップの目的に応じて、適切なツールを呼び出してください。
+結果を得たら、ユーザーに分かりやすく日本語で報告してください。`;
+
+                const userPrompt = `【最終ゴール】
+${goal}
+
+【現在のステップ】
+${step}
+
+上記のステップを実行してください。必要に応じてツールを使い、結果を日本語で報告してください。`;
+
+                const result = await this.gemini.chatWithTools(
+                    [
+                        { role: 'user', content: systemPrompt },
+                        { role: 'model', content: '了解しました。ツールを使ってステップを実行します。' },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    toolDeclarations,
+                    async (name, args) => {
+                        this.log('info', `Tool called: ${name} with args: ${JSON.stringify(args)}`);
+                        const toolResult = await this.agentTools.executeTool(name, args);
+                        this.log('info', `Tool result: ${JSON.stringify(toolResult).substring(0, 200)}...`);
+                        return toolResult;
+                    }
+                );
+
+                this.log('info', `Step execution result: ${result.text.substring(0, 100)}...`);
+                this.log('info', `Tools called: ${result.toolCalls.length}`);
+                
+                new Notice(`ステップ実行完了（${result.toolCalls.length}個のツールを使用）`);
+                return result.text;
             }
         } catch (e) {
             this.log('error', `executeStep error: ${e}`);
             new Notice(`ステップエラー: ${e}`);
-            result = `エラー: ${e}`;
+            return `エラー: ${e}`;
         }
-        return result;
     }
 
     private async getVaultContext(query: string): Promise<string> {
@@ -287,7 +311,11 @@ ${vaultContext}
         const safeTitle = title.replace(/[:\\\/*?"<>|]/g, '-')
             .replace(/\s+/g, '_')
             .slice(0, 100);
-        const path = `Agent Tasks/${safeTitle}.md`;
+        // Prefer placing tasks in the session folder when available
+        const sessionFolder = this.sessionNote.getSessionFolderPath?.();
+        const path = sessionFolder
+            ? `${sessionFolder}/${safeTitle}.md`
+            : `Agent Tasks/${safeTitle}.md`;
         this.log('info', `Task path: ${path}`);
         
         // Check if the target path is accessible
@@ -297,7 +325,11 @@ ${vaultContext}
         }
         
         try {
-            await this.ensureFolder('Agent Tasks');
+            if (sessionFolder) {
+                await this.ensureFolder(sessionFolder);
+            } else {
+                await this.ensureFolder('Agent Tasks');
+            }
             const file = await this.app.vault.create(path, `# ${title}\n\n${body}`);
             this.log('success', `Task file created at: ${path}`);
             return file;

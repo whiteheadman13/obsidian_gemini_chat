@@ -1,3 +1,21 @@
+// Tool definition for Gemini Function Calling
+export interface GeminiFunctionDeclaration {
+	name: string;
+	description: string;
+	parameters: {
+		type: string;
+		properties: Record<string, {
+			type: string;
+			description: string;
+			enum?: string[];
+		}>;
+		required?: string[];
+	};
+}
+
+// Tool execution handler
+export type ToolExecutor = (functionName: string, args: Record<string, any>) => Promise<any>;
+
 export class GeminiService {
 	private apiKey: string;
 
@@ -60,5 +78,133 @@ export class GeminiService {
 		}
 
 		return { text, references };
+	}
+
+	/**
+	 * Chat with Function Calling support.
+	 * LLM can call tools and this method will execute them and return the final response.
+	 */
+	async chatWithTools(
+		messages: Array<{ role: string; content: string }>,
+		functionDeclarations: GeminiFunctionDeclaration[],
+		toolExecutor: ToolExecutor,
+		maxIterations: number = 5
+	): Promise<{ text: string; references: string[]; toolCalls: Array<{ name: string; args: any; result: any }> }> {
+		if (!this.apiKey) {
+			throw new Error('Gemini API key is not set');
+		}
+
+		const references: string[] = [];
+		const toolCalls: Array<{ name: string; args: any; result: any }> = [];
+		
+		// Build conversation history with tool calls
+		const conversationHistory: any[] = messages.map(msg => ({
+			role: msg.role === 'user' ? 'user' : 'model',
+			parts: [{ text: msg.content }],
+		}));
+
+		for (let iteration = 0; iteration < maxIterations; iteration++) {
+			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + this.apiKey, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					contents: conversationHistory,
+					tools: [
+						{
+							functionDeclarations: functionDeclarations
+						}
+					]
+				}),
+			});
+
+			if (!response.ok) {
+				const error = await response.json();
+				throw new Error(`Gemini API error: ${error.error?.message || response.statusText}`);
+			}
+
+			const data = await response.json();
+			const candidate = data.candidates[0];
+			
+			if (!candidate?.content) {
+				throw new Error('No content in Gemini response');
+			}
+
+			// Extract grounding references
+			const groundingMetadata = candidate.groundingMetadata;
+			if (groundingMetadata?.groundingChunks) {
+				for (const chunk of groundingMetadata.groundingChunks) {
+					if (chunk.web?.uri && !references.includes(chunk.web.uri)) {
+						references.push(chunk.web.uri);
+					}
+				}
+			}
+
+			const parts = candidate.content.parts || [];
+			
+			// Check if there's a function call
+			const functionCallParts = parts.filter((p: any) => p.functionCall);
+			
+			if (functionCallParts.length === 0) {
+				// No function call, this is the final text response
+				const textPart = parts.find((p: any) => p.text);
+				const text = textPart?.text || '';
+				
+				// Extract URLs from text
+				const urlRegex = /https?:\/\/[^\s\)\]]+/g;
+				const urlsInText = text.match(urlRegex) || [];
+				for (const url of urlsInText) {
+					if (!references.includes(url)) {
+						references.push(url);
+					}
+				}
+				
+				return { text, references, toolCalls };
+			}
+
+			// Execute all function calls
+			const functionResponses: any[] = [];
+			
+			for (const part of functionCallParts) {
+				const functionCall = part.functionCall;
+				const functionName = functionCall.name;
+				const functionArgs = functionCall.args || {};
+				
+				try {
+					const result = await toolExecutor(functionName, functionArgs);
+					toolCalls.push({ name: functionName, args: functionArgs, result });
+					functionResponses.push({
+						functionResponse: {
+							name: functionName,
+							response: { result }
+						}
+					});
+				} catch (error) {
+					const errorMessage = (error as Error).message || String(error);
+					functionResponses.push({
+						functionResponse: {
+							name: functionName,
+							response: { error: errorMessage }
+						}
+					});
+				}
+			}
+
+			// Add model's function call to conversation
+			conversationHistory.push({
+				role: 'model',
+				parts: functionCallParts
+			});
+
+			// Add function responses to conversation
+			conversationHistory.push({
+				role: 'user',
+				parts: functionResponses
+			});
+		}
+
+		// Max iterations reached
+		throw new Error(`Max tool call iterations (${maxIterations}) reached without final response`);
 	}
 }

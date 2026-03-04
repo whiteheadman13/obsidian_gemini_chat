@@ -1,4 +1,4 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
+import {App, PluginSettingTab, Setting, TFile} from "obsidian";
 import MyPlugin from "./main";
 
 export interface MyPluginSettings {
@@ -6,13 +6,17 @@ export interface MyPluginSettings {
 	chatHistoryFolder: string;
 	agentAllowedFolders: string[];
 	agentBlockedFolders: string[];
+	agentTemplateFolder: string;
+	agentTemplateFile: string;
 }
 
 export const DEFAULT_SETTINGS: MyPluginSettings = {
 	geminiApiKey: '',
 	chatHistoryFolder: 'Chat History',
 	agentAllowedFolders: [],
-	agentBlockedFolders: []
+	agentBlockedFolders: [],
+	agentTemplateFolder: '',
+	agentTemplateFile: ''
 }
 
 export class SampleSettingTab extends PluginSettingTab {
@@ -50,6 +54,51 @@ export class SampleSettingTab extends PluginSettingTab {
 					this.plugin.settings.chatHistoryFolder = value;
 					await this.plugin.saveSettings();
 				}));
+
+		// Agent template settings
+		containerEl.createEl('h2', {text: 'エージェントテンプレート'});
+
+		new Setting(containerEl)
+			.setName('テンプレート格納フォルダ')
+			.setDesc('AIAgent起動時のテンプレート選択候補を、このフォルダ配下に限定します。空欄の場合はVault全体が対象です。')
+			.addText(text => {
+				text
+					.setPlaceholder('例: Templates')
+					.setValue(this.plugin.settings.agentTemplateFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.agentTemplateFolder = value.trim();
+						await this.plugin.saveSettings();
+					});
+
+				text.inputEl.addEventListener('focus', () => {
+					this.showFolderDropdown(text.inputEl, this.getAllFoldersInVault());
+				});
+
+				text.inputEl.addEventListener('input', () => {
+					this.showFolderDropdown(text.inputEl, this.getAllFoldersInVault());
+				});
+			});
+
+		new Setting(containerEl)
+			.setName('テンプレートファイル')
+			.setDesc('既定のテンプレートファイルです。エージェント起動時に個別指定しない場合、このファイルを使用します。')
+			.addText(text => {
+				text
+					.setPlaceholder('例: Templates/課題整理テンプレート.md')
+					.setValue(this.plugin.settings.agentTemplateFile)
+					.onChange(async (value) => {
+						this.plugin.settings.agentTemplateFile = value;
+						await this.plugin.saveSettings();
+					});
+				
+				text.inputEl.addEventListener('focus', () => {
+					this.showFileDropdown(text.inputEl, this.getTemplateCandidateFiles(this.plugin.settings.agentTemplateFolder));
+				});
+
+				text.inputEl.addEventListener('input', () => {
+					this.showFileDropdown(text.inputEl, this.getTemplateCandidateFiles(this.plugin.settings.agentTemplateFolder));
+				});
+			});
 
 		// Agent folder access control
 		containerEl.createEl('h2', {text: 'エージェントフォルダアクセス制御'});
@@ -241,5 +290,192 @@ export class SampleSettingTab extends PluginSettingTab {
 		
 		// Sort alphabetically
 		return folders.sort((a, b) => a.localeCompare(b, 'ja'));
+	}
+
+	private getTemplateCandidateFiles(templateFolder: string): TFile[] {
+		const markdownFiles = this.app.vault.getMarkdownFiles();
+		const normalizedFolder = templateFolder.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+
+		const scopedFiles = normalizedFolder
+			? markdownFiles.filter((file) => file.path.startsWith(`${normalizedFolder}/`))
+			: markdownFiles;
+
+		const prioritized = scopedFiles.filter((file) =>
+			/template|テンプレート/i.test(file.path)
+		);
+		const others = scopedFiles.filter((file) =>
+			!/template|テンプレート/i.test(file.path)
+		);
+
+		return [...prioritized, ...others].sort((a, b) => a.path.localeCompare(b.path, 'ja'));
+	}
+
+	private showFileDropdown(inputElement: HTMLInputElement, files: TFile[]) {
+		const parent = inputElement.parentElement as HTMLElement | null;
+		if (parent && parent.style.position !== 'relative') {
+			parent.style.position = 'relative';
+		}
+
+		// Create a dropdown container if it doesn't exist
+		let dropdown = inputElement.parentElement?.querySelector('.file-dropdown') as HTMLElement | null;
+		if (!dropdown) {
+			dropdown = document.createElement('div') as HTMLElement;
+			dropdown.className = 'file-dropdown';
+			dropdown.style.cssText = `
+				position: absolute;
+				top: 100%;
+				left: 0;
+				right: 0;
+				max-height: 300px;
+				overflow-y: auto;
+				border: 1px solid var(--background-modifier-border);
+				border-radius: 4px;
+				background: var(--background-secondary);
+				z-index: 1000;
+				margin-top: 4px;
+				display: none;
+			`;
+			inputElement.parentElement?.appendChild(dropdown);
+		}
+
+		dropdown.innerHTML = '';
+		
+		const filterValue = inputElement.value.toLowerCase();
+		const filteredFiles = files.filter(f => f.path.toLowerCase().includes(filterValue));
+
+		if (filteredFiles.length === 0) {
+			const emptyMsg = dropdown.createDiv();
+			emptyMsg.textContent = 'ファイルが見つかりません';
+			emptyMsg.style.cssText = 'padding: 8px; color: var(--text-muted); text-align: center;';
+			dropdown.style.display = 'block';
+			return;
+		}
+
+		filteredFiles.slice(0, 20).forEach(file => {
+			const item = dropdown!.createDiv();
+			item.textContent = file.path;
+			item.style.cssText = `
+				padding: 8px 12px;
+				cursor: pointer;
+				border-bottom: 1px solid var(--background-modifier-border);
+				font-size: 0.9em;
+			`;
+
+			item.addEventListener('mouseenter', () => {
+				item.style.backgroundColor = 'var(--background-modifier-hover)';
+			});
+
+			item.addEventListener('mouseleave', () => {
+				item.style.backgroundColor = '';
+			});
+
+			item.addEventListener('click', () => {
+				inputElement.value = file.path;
+				dropdown!.style.display = 'none';
+				this.plugin.settings.agentTemplateFile = file.path;
+				this.plugin.saveSettings();
+			});
+		});
+
+		if (filteredFiles.length > 20) {
+			const moreMsg = dropdown.createDiv();
+			moreMsg.textContent = `他 ${filteredFiles.length - 20} 件...`;
+			moreMsg.style.cssText = 'padding: 8px; color: var(--text-muted); text-align: center; font-size: 0.9em;';
+		}
+
+		dropdown.style.display = 'block';
+
+		if (!inputElement.dataset.templateDropdownBound) {
+			inputElement.dataset.templateDropdownBound = '1';
+			inputElement.addEventListener('blur', () => {
+				setTimeout(() => {
+					dropdown!.style.display = 'none';
+				}, 200);
+			});
+		}
+	}
+
+	private showFolderDropdown(inputElement: HTMLInputElement, folders: string[]) {
+		const parent = inputElement.parentElement as HTMLElement | null;
+		if (parent && parent.style.position !== 'relative') {
+			parent.style.position = 'relative';
+		}
+
+		let dropdown = inputElement.parentElement?.querySelector('.folder-dropdown') as HTMLElement | null;
+		if (!dropdown) {
+			dropdown = document.createElement('div') as HTMLElement;
+			dropdown.className = 'folder-dropdown';
+			dropdown.style.cssText = `
+				position: absolute;
+				top: 100%;
+				left: 0;
+				right: 0;
+				max-height: 260px;
+				overflow-y: auto;
+				border: 1px solid var(--background-modifier-border);
+				border-radius: 4px;
+				background: var(--background-secondary);
+				z-index: 1000;
+				margin-top: 4px;
+				display: none;
+			`;
+			inputElement.parentElement?.appendChild(dropdown);
+		}
+
+		dropdown.innerHTML = '';
+		const filterValue = inputElement.value.toLowerCase();
+		const filteredFolders = folders.filter((folder) => folder.toLowerCase().includes(filterValue));
+
+		if (filteredFolders.length === 0) {
+			const emptyMsg = dropdown.createDiv();
+			emptyMsg.textContent = 'フォルダが見つかりません';
+			emptyMsg.style.cssText = 'padding: 8px; color: var(--text-muted); text-align: center;';
+			dropdown.style.display = 'block';
+			return;
+		}
+
+		filteredFolders.slice(0, 20).forEach((folder) => {
+			const item = dropdown!.createDiv();
+			item.textContent = folder;
+			item.style.cssText = `
+				padding: 8px 12px;
+				cursor: pointer;
+				border-bottom: 1px solid var(--background-modifier-border);
+				font-size: 0.9em;
+			`;
+
+			item.addEventListener('mouseenter', () => {
+				item.style.backgroundColor = 'var(--background-modifier-hover)';
+			});
+
+			item.addEventListener('mouseleave', () => {
+				item.style.backgroundColor = '';
+			});
+
+			item.addEventListener('click', async () => {
+				inputElement.value = folder;
+				dropdown!.style.display = 'none';
+				this.plugin.settings.agentTemplateFolder = folder;
+				await this.plugin.saveSettings();
+				inputElement.focus();
+			});
+		});
+
+		if (filteredFolders.length > 20) {
+			const moreMsg = dropdown.createDiv();
+			moreMsg.textContent = `他 ${filteredFolders.length - 20} 件...`;
+			moreMsg.style.cssText = 'padding: 8px; color: var(--text-muted); text-align: center; font-size: 0.9em;';
+		}
+
+		dropdown.style.display = 'block';
+
+		if (!inputElement.dataset.templateFolderDropdownBound) {
+			inputElement.dataset.templateFolderDropdownBound = '1';
+			inputElement.addEventListener('blur', () => {
+				setTimeout(() => {
+					dropdown!.style.display = 'none';
+				}, 200);
+			});
+		}
 	}
 }

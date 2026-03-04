@@ -4,6 +4,8 @@ import InteractiveAgentService from './interactiveAgentService';
 import type MyPlugin from '../main';
 import { GeminiService } from '../geminiService';
 import type { AgentLogView } from '../agentLogView';
+import { promptForResumeStep } from '../modals/resumeStepModal';
+import { promptForResumeMode } from '../modals/resumeModeModal';
 
 export class SessionResumeService {
     private app: App;
@@ -43,7 +45,16 @@ export class SessionResumeService {
 
         const sessionData = sessionNote.getData();
 
-        // Create interactive agent (resume always uses interactive mode)
+        // Ask user to select execution mode
+        const modeResult = await promptForResumeMode(this.app);
+        if (!modeResult || !modeResult.mode) {
+            new Notice('キャンセルされました');
+            return;
+        }
+
+        const isInteractive = modeResult.mode === 'interactive';
+
+        // Create agent with selected mode
         const gemini = this.plugin.settings.geminiApiKey 
             ? new GeminiService(this.plugin.settings.geminiApiKey) 
             : undefined;
@@ -53,15 +64,27 @@ export class SessionResumeService {
             this.plugin, 
             sessionData.goal, 
             gemini,
-            true // Resume is always interactive
+            isInteractive
         );
 
         if (logView) {
             agent.setLogView(logView);
         }
 
-        // Resume from current state
-        await agent.resumeFromNote(sessionNote);
+        // Ask user if they want to resume from a specific step
+        const steps = sessionNote.getData().plan;
+        let chosenStep: number | undefined = undefined;
+        let forceRestart = false;
+        if (steps && steps.length > 0) {
+            const pick = await promptForResumeStep(this.app, steps);
+            if (pick && pick.step && Number.isInteger(pick.step) && pick.step >= 1 && pick.step <= steps.length) {
+                chosenStep = pick.step;
+                forceRestart = !!pick.forceRestart;
+            }
+        }
+
+        // Resume from current state (optionally from chosen step)
+        await agent.resumeFromNote(sessionNote, chosenStep, forceRestart);
     }
 
     private isSessionNote(content: string): boolean {

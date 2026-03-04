@@ -8,6 +8,8 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 		chatHistoryFolder: 'Chat History',
 		agentAllowedFolders: [],
 		agentBlockedFolders: [],
+		agentTemplateFolder: '',
+		agentTemplateFile: '',
 		...overrides,
 	};
 }

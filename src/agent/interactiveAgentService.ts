@@ -4,7 +4,10 @@ import type MyPlugin from '../main';
 import type { AgentLogView, FeedbackPromptResult } from '../agentLogView';
 import { AgentSessionNote } from './agentSessionNote';
 import { promptAgentConfirmation } from '../modals/agentConfirmModal';
+import { promptForStepExecution } from '../modals/stepExecuteModal';
 import { FolderAccessControl } from '../folderAccessControl';
+import { AgentTemplateService, AgentTemplate } from './agentTemplateService';
+import { AgentTools } from './agentTools';
 
 export class InteractiveAgentService {
     private app: App;
@@ -14,14 +17,27 @@ export class InteractiveAgentService {
     private sessionNote: AgentSessionNote;
     private interactive: boolean;
     private accessControl: FolderAccessControl;
+    private templatePath?: string;
+    private loadedTemplate?: AgentTemplate;
+    private templateService: AgentTemplateService;
+    private templateReferenceNoteContents: Record<string, string> = {};
+    private agentTools: AgentTools;
 
-    constructor(app: App, plugin: MyPlugin, goal: string, gemini?: GeminiService, interactive: boolean = true) {
+    constructor(app: App, plugin: MyPlugin, goal: string, gemini?: GeminiService, interactive: boolean = true, templatePath?: string) {
         this.app = app;
         this.plugin = plugin;
         this.gemini = gemini;
         this.sessionNote = new AgentSessionNote(app, goal);
         this.interactive = interactive;
         this.accessControl = new FolderAccessControl(plugin.settings);
+        this.templatePath = templatePath;
+        this.templateService = new AgentTemplateService(app);
+        this.agentTools = new AgentTools(
+            app,
+            gemini || null,
+            this.accessControl,
+            (title, body) => this.createTask(title, body)
+        );
     }
 
     setLogView(view: AgentLogView) {
@@ -42,6 +58,29 @@ export class InteractiveAgentService {
         new Notice(`${modeLabel}エージェント起動: ${goal}`);
 
         try {
+            // Step 0: Load template if specified
+            if (this.templatePath) {
+                this.log('info', `Loading template: ${this.templatePath}`);
+                try {
+                    this.loadedTemplate = await this.templateService.loadTemplate(this.templatePath);
+
+                    const referencedNoteNames = Array.from(
+                        new Set([
+                            ...this.loadedTemplate.notesList,
+                            ...this.loadedTemplate.referenceNotes,
+                        ])
+                    );
+                    this.templateReferenceNoteContents = await this.templateService.loadReferenceNoteContents(referencedNoteNames);
+
+                    this.log('success', `Template loaded successfully (reference notes: ${Object.keys(this.templateReferenceNoteContents).length})`);
+                } catch (e) {
+                    this.log('warn', `Failed to load template: ${e}`);
+                    new Notice(`テンプレート読み込み失敗: ${e}`);
+                }
+            }
+
+            this.sessionNote.setTemplateReference(this.loadedTemplate?.templatePath);
+
             // Step 1: Create session note
             this.log('info', 'Creating session note...');
             const noteFile = await this.sessionNote.create();
@@ -96,7 +135,12 @@ export class InteractiveAgentService {
                 if (!step) continue;
 
                 const stepNum = i + 1;
+                const executionOption = stepExecutionOptions.get(stepNum);
                 this.sessionNote.setCurrentStep(stepNum);
+                this.sessionNote.setStepReferencedInstructions(
+                    stepNum,
+                    this.buildStepReferencedInstructions(step, executionOption)
+                );
                 this.sessionNote.updateStepStatus(stepNum, 'running');
                 await this.sessionNote.update();
 
@@ -104,7 +148,6 @@ export class InteractiveAgentService {
                 new Notice(`ステップ ${stepNum}: ${step}`);
 
                 // Execute step
-                const executionOption = stepExecutionOptions.get(stepNum);
                 const stepResult = await this.executeStep(step, goal, stepNum, executionOption);
                 this.sessionNote.updateStepStatus(stepNum, 'running', stepResult.result, stepResult.inputRequired, stepResult.references);
                 await this.sessionNote.update();
@@ -249,17 +292,85 @@ export class InteractiveAgentService {
         }
     }
 
+    private buildStepReferencedInstructions(
+        step: string,
+        options?: { stepInstruction?: string; deepDive?: boolean }
+    ): string[] {
+        const instructions: string[] = [];
+
+        instructions.push(`現在のステップ: ${step}`);
+
+        if (this.loadedTemplate) {
+            if (this.loadedTemplate.approach.trim()) {
+                instructions.push(`課題整理の進め方（抜粋）: ${this.toExcerpt(this.loadedTemplate.approach, 180)}`);
+            }
+            if (this.loadedTemplate.definition.trim()) {
+                instructions.push(`課題の定義（抜粋）: ${this.toExcerpt(this.loadedTemplate.definition, 180)}`);
+            }
+            if (this.loadedTemplate.recordingMethod.trim()) {
+                instructions.push(`課題の記載方法（抜粋）: ${this.toExcerpt(this.loadedTemplate.recordingMethod, 180)}`);
+            }
+
+            const noteContents = Object.values(this.templateReferenceNoteContents)
+                .map((content) => this.toExcerpt(content, 240))
+                .filter((content) => content.length > 0)
+                .slice(0, 3);
+
+            if (noteContents.length > 0) {
+                noteContents.forEach((content, idx) => {
+                    instructions.push(`参考ノート内容${idx + 1}: ${content}`);
+                });
+            } else {
+                instructions.push('参考ノート内容: なし（参照ノート未設定または未取得）');
+            }
+        } else {
+            instructions.push('テンプレート項目: なし（テンプレート未使用）');
+        }
+
+        if (options?.deepDive) {
+            instructions.push('実行モード: 再深掘り（ユーザー回答ベース）');
+        }
+
+        if (options?.stepInstruction?.trim()) {
+            const preview = options.stepInstruction.trim();
+            const truncated = preview.length > 120 ? `${preview.substring(0, 120)}...` : preview;
+            instructions.push(`ユーザー追加指示: ${truncated}`);
+        }
+
+        return instructions;
+    }
+
+    private toExcerpt(text: string, maxLength: number): string {
+        const normalized = text
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (normalized.length <= maxLength) {
+            return normalized;
+        }
+
+        return `${normalized.slice(0, maxLength)}...`;
+    }
+
     private async generatePlan(goal: string): Promise<string[]> {
         this.log('info', `Planning with Gemini: ${!!this.gemini}`);
         if (this.gemini) {
             try {
+                // Prepare template context if available
+                let templateContext = '';
+                if (this.loadedTemplate) {
+                    templateContext = '\n\n【テンプレート情報】\n' + 
+                        this.templateService.formatAsSystemPrompt(this.loadedTemplate);
+                }
+
                 const prompt = `あなたはエージェントです。与えられたゴールを達成するための実行可能な手順を出してください。
 
 【できること】
 - Obsidian Vault内のノート検索・要約・タスク作成
 - Geminiを使った情報取得・分析（Google検索を含む）
 
-各ステップは1行で、番号や記号なしで記述してください。3〜6個のステップを出してください。
+各ステップは1行で、番号や記号なしで記述してください。3〜6個のステップを出してください。${templateContext}
 
 ゴール: ${goal}`;
                 this.log('info', 'Sending plan request to Gemini');
@@ -298,6 +409,17 @@ export class InteractiveAgentService {
     ): Promise<{ result: string; inputRequired?: string; references?: string[] }> {
         this.log('info', `Executing step: ${step}`);
         
+        // Ask user to confirm step execution and choose web search option
+        const stepExecution = await promptForStepExecution(this.app, stepNum, step);
+        if (!stepExecution || stepExecution.action === 'cancel') {
+            this.log('warn', 'User cancelled step execution');
+            new Notice('ステップの実行がキャンセルされました');
+            throw new Error('Step execution cancelled by user');
+        }
+
+        const needsWebSearch = stepExecution.useWebSearch;
+        this.log('info', `User selected: ${needsWebSearch ? 'Web Search mode' : 'Vault Tools mode'}`);
+        
         // Get context from all completed steps
         let completedStepsContext = '';
         if (stepNum > 1) {
@@ -332,59 +454,92 @@ export class InteractiveAgentService {
             : '';
 
         try {
-            if (/search/i.test(step)) {
-                this.log('info', 'Action: search');
-                const hits = await this.searchNotes(goal);
-                this.log('success', `Search results: ${hits.length} files`);
-                const result = `Found ${hits.length} files:\n${hits.map(f => `- ${f.path}`).join('\n')}`;
-                new Notice(`検索結果: ${hits.length} 件`);
-                return { result };
-            } else if (/summariz/i.test(step) || /summary/i.test(step)) {
-                this.log('info', 'Action: summarize');
-                const hits = await this.searchNotes(goal);
-                const first = hits[0];
-                if (first) {
-                    this.log('info', `Summarizing: ${first.path}`);
-                    const summary = await this.summarizeFile(first);
-                    this.log('success', `Summary: ${summary.substring(0, 100)}...`);
-                    new Notice(`要約完了`);
-                    return { result: `Summary of ${first.path}:\n\n${summary}` };
-                } else {
-                    this.log('warn', 'No files to summarize');
-                    new Notice('要約対象のファイルがありません');
-                    return { result: 'No files found to summarize' };
-                }
-            } else if (/create|task|todo/i.test(step)) {
-                this.log('info', 'Action: create task');
-                const hits = await this.searchNotes(goal);
-                const first = hits[0];
-                const based = first ? `Based on ${first.path}\n` : '';
-                const body = `# Agent-generated TODOs for: ${goal}\n\n${based}- ${goal}`;
-                const taskPath = await this.createTask(`Agent task - ${new Date().toISOString()}`, body);
-                this.log('success', 'Task created');
-                new Notice('ToDo を作成しました ✓');
-                return { result: `Task created at: ${taskPath}` };
+            if (!this.gemini) {
+                this.log('warn', `Skipping step (no Gemini): ${step}`);
+                new Notice(`スキップ: ${step}`);
+                return { result: `Skipped (no Gemini service available)` };
+            }
+
+            // Prepare template context if available
+            let templateContext = '';
+            if (this.loadedTemplate) {
+                templateContext = '\n\n【テンプレート情報】\n' + 
+                    this.templateService.formatAsSystemPrompt(this.loadedTemplate);
+            }
+
+            if (needsWebSearch) {
+                this.log('info', 'Using Google Search (web search mode)');
+                const prompt = `【最終ゴール】
+${goal}${completedStepsContext}
+
+【現在のステップ】
+${step}${currentStepInstruction}${executionModeInstruction}${templateContext}
+
+上記のステップを実行してください。Web検索を使って最新情報を調べ、結果を日本語で報告してください。`;
+
+                const geminiResult = await this.gemini.chatWithMetadata([{ role: 'user', content: prompt }]);
+                const res = geminiResult.text;
+                const references = geminiResult.references;
+                this.log('info', `Web search result: ${res.substring(0, 100)}...`);
+                this.log('info', `References found: ${references.length} URLs`);
+                
+                // Extract input requirements from result
+                const inputRequired = await this.extractInputRequirements(res, step);
+                
+                new Notice(`Web検索完了（${references.length}件の参照）`);
+                return { result: res, inputRequired: inputRequired || undefined, references };
             } else {
-                this.log('info', 'Action: generic/ask');
-                if (this.gemini) {
-                    this.log('info', `Asking Gemini how to execute: ${step}`);
-                    const prompt = `【最終ゴール】\n${goal}${completedStepsContext}\n\n【現在のステップ】\n${step}${currentStepInstruction}${executionModeInstruction}\n\n上記の最終ゴールを達成するため、これまでのステップで得られた情報を十分に活用して、現在のステップを実行する方法を具体的に教えてください。既に収集済みの情報については再度質問しないでください。`;
-                    const geminiResult = await this.gemini.chatWithMetadata([{ role: 'user', content: prompt }]);
-                    const res = geminiResult.text;
-                    const references = geminiResult.references;
-                    this.log('info', `Gemini advice: ${res.substring(0, 100)}...`);
-                    this.log('info', `References found: ${references.length} URLs`);
-                    
-                    // Extract input requirements from advice
-                    const inputRequired = await this.extractInputRequirements(res, step);
-                    
-                    new Notice(`アドバイスを取得しました`);
-                    return { result: `Gemini advice:\n\n${res}`, inputRequired: inputRequired || undefined, references };
-                } else {
-                    this.log('warn', `Skipping step (no Gemini): ${step}`);
-                    new Notice(`スキップ: ${step}`);
-                    return { result: `Skipped (no implementation)` };
-                }
+                this.log('info', 'Using Function Calling (Vault tools mode)');
+                
+                const toolDeclarations = this.agentTools.getToolDeclarations();
+                
+                const systemPrompt = `あなたは Obsidian Vault 内でタスクを実行するエージェントです。
+
+以下のツールを使ってステップを実行してください：
+- search_notes: ノートをキーワード検索
+- read_note: 特定のノートの内容を読む
+- summarize_note: ノートを要約
+- create_note: 新しいノートを作成
+
+ステップの目的に応じて、適切なツールを呼び出してください。
+結果を得たら、ユーザーに分かりやすく日本語で報告してください。`;
+
+                const userPrompt = `【最終ゴール】
+${goal}${completedStepsContext}
+
+【現在のステップ】
+${step}${currentStepInstruction}${executionModeInstruction}${templateContext}
+
+上記のステップを実行してください。必要に応じてツールを使い、結果を日本語で報告してください。`;
+
+                const result = await this.gemini.chatWithTools(
+                    [
+                        { role: 'user', content: systemPrompt },
+                        { role: 'model', content: '了解しました。ツールを使ってステップを実行します。' },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    toolDeclarations,
+                    async (name, args) => {
+                        this.log('info', `Tool called: ${name} with args: ${JSON.stringify(args)}`);
+                        const toolResult = await this.agentTools.executeTool(name, args);
+                        this.log('info', `Tool result: ${JSON.stringify(toolResult).substring(0, 200)}...`);
+                        return toolResult;
+                    }
+                );
+
+                this.log('info', `Step execution result: ${result.text.substring(0, 100)}...`);
+                this.log('info', `Tools called: ${result.toolCalls.length}`);
+                this.log('info', `References found: ${result.references.length} URLs`);
+                
+                // Extract input requirements from result
+                const inputRequired = await this.extractInputRequirements(result.text, step);
+                
+                new Notice(`ステップ実行完了（${result.toolCalls.length}個のツールを使用）`);
+                return { 
+                    result: result.text, 
+                    inputRequired: inputRequired || undefined, 
+                    references: result.references 
+                };
             }
         } catch (e) {
             this.log('error', `executeStep error: ${e}`);
@@ -439,7 +594,11 @@ export class InteractiveAgentService {
         const safeTitle = title.replace(/[:\\/*?"<>|]/g, '-')
             .replace(/\s+/g, '_')
             .slice(0, 100);
-        const path = `Agent Tasks/${safeTitle}.md`;
+        // Prefer placing tasks in the session folder when available
+        const sessionFolder = this.sessionNote.getSessionFolderPath?.();
+        const path = sessionFolder
+            ? `${sessionFolder}/${safeTitle}.md`
+            : `Agent Tasks/${safeTitle}.md`;
         this.log('info', `Task path: ${path}`);        
         // Check if the target path is accessible
         if (!this.accessControl.isPathAccessAllowed(path)) {
@@ -447,7 +606,11 @@ export class InteractiveAgentService {
             throw new Error(`アクセスが許可されていないフォルダです: Agent Tasks`);
         }
                 try {
-            await this.ensureFolder('Agent Tasks');
+            if (sessionFolder) {
+                await this.ensureFolder(sessionFolder);
+            } else {
+                await this.ensureFolder('Agent Tasks');
+            }
             await this.app.vault.create(path, `# ${title}\n\n${body}`);
             this.log('success', `Task file created at: ${path}`);
             return path;
@@ -508,8 +671,8 @@ ${advice.substring(0, 1000)}
         return null;
     }
 
-    // Resume from an existing session note
-    async resumeFromNote(sessionNote: AgentSessionNote): Promise<void> {
+    // Resume from an existing session note (optionally from a specified step)
+    async resumeFromNote(sessionNote: AgentSessionNote, startStep?: number, forceRestart: boolean = false): Promise<void> {
         this.sessionNote = sessionNote;
         const sessionData = this.sessionNote.getData();
         const goal = sessionData.goal;
@@ -530,36 +693,56 @@ ${advice.substring(0, 1000)}
             const finalPlan = sessionData.plan;
             this.log('info', `Plan has ${finalPlan.length} steps`);
 
-            // Determine starting step - find the first non-completed step
-            let startStep = 1;
-            
+            // Determine starting step - either the provided startStep or first non-completed step
+            let computedStart = 1;
             for (let i = 0; i < sessionData.executionLog.length; i++) {
                 const logEntry = sessionData.executionLog[i];
                 this.log('info', `Step ${i + 1} status: ${logEntry ? logEntry.status : 'unknown'}`);
-                
+
                 if (!logEntry || logEntry.status === 'pending' || logEntry.status === 'running') {
-                    startStep = i + 1;
+                    computedStart = i + 1;
                     break;
                 }
-                
+
                 if (logEntry.status === 'completed') {
-                    // This step is done, check next
                     if (i === sessionData.executionLog.length - 1) {
-                        // This was the last step
-                        startStep = i + 2; // Will be > finalPlan.length
+                        computedStart = i + 2; // past last
                     }
                     continue;
                 }
-                
+
                 if (logEntry.status === 'error') {
-                    // Restart from error step
-                    startStep = i + 1;
+                    computedStart = i + 1;
                     break;
                 }
             }
 
+            // If a startStep was provided and valid, prefer it
+            let start = computedStart;
+            if (typeof startStep === 'number' && Number.isInteger(startStep) && startStep >= 1 && startStep <= sessionData.plan.length) {
+                start = startStep;
+                this.log('info', `Overriding start step to user-specified: ${start}`);
+            }
+
+            // If forceRestart is requested, reset statuses/results for steps from start onward
+            if (forceRestart) {
+                this.log('info', `Force restart requested: resetting steps ${start}..${sessionData.plan.length} to pending`);
+                for (let si = start - 1; si < sessionData.executionLog.length; si++) {
+                    const entry = sessionData.executionLog[si];
+                    if (entry) {
+                        entry.status = 'pending';
+                        entry.result = undefined;
+                        entry.userFeedback = undefined;
+                        entry.inputRequired = undefined;
+                        entry.references = undefined;
+                        entry.referencedInstructions = [];
+                    }
+                }
+                await this.sessionNote.update();
+            }
+
             // If all steps completed
-            if (startStep > finalPlan.length) {
+            if (start > finalPlan.length) {
                 this.log('success', 'All steps already completed');
                 new Notice('全ステップが既に完了しています');
                 this.sessionNote.setStatus('completed');
@@ -567,8 +750,8 @@ ${advice.substring(0, 1000)}
                 return;
             }
 
-            this.log('info', `Starting from step ${startStep}/${finalPlan.length}`);
-            new Notice(`ステップ ${startStep}/${finalPlan.length} から再開します`);
+            this.log('info', `Starting from step ${start}/${finalPlan.length}`);
+            new Notice(`ステップ ${start}/${finalPlan.length} から再開します`);
 
             // Set status to executing
             this.sessionNote.setStatus('executing');
@@ -576,7 +759,7 @@ ${advice.substring(0, 1000)}
 
             // Execute remaining steps
             const stepExecutionOptions = new Map<number, { stepInstruction?: string; deepDive?: boolean }>();
-            for (let i = startStep - 1; i < finalPlan.length; i++) {
+            for (let i = start - 1; i < finalPlan.length; i++) {
                 const step = finalPlan[i];
                 if (!step) continue;
 
