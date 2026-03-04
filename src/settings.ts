@@ -3,6 +3,7 @@ import MyPlugin from "./main";
 
 export interface MyPluginSettings {
 	geminiApiKey: string;
+	geminiModel: string;
 	chatHistoryFolder: string;
 	agentAllowedFolders: string[];
 	agentBlockedFolders: string[];
@@ -12,6 +13,7 @@ export interface MyPluginSettings {
 
 export const DEFAULT_SETTINGS: MyPluginSettings = {
 	geminiApiKey: '',
+	geminiModel: 'gemini-3.1-flash-lite-preview',
 	chatHistoryFolder: 'Chat History',
 	agentAllowedFolders: [],
 	agentBlockedFolders: [],
@@ -43,6 +45,19 @@ export class SampleSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 				.inputEl.setAttribute('type', 'password'));
+
+		new Setting(containerEl)
+			.setName('Gemini Model')
+			.setDesc('使用するGeminiモデルを選択してください')
+			.addDropdown(dropdown => dropdown
+				.addOption('gemini-3.1-flash-lite-preview', 'Gemini 3.1 Flash Lite Preview')
+				.addOption('gemini-3-flash-preview', 'Gemini 3 Flash Preview')
+				.addOption('gemini-3.1-pro-preview', 'Gemini 3.1 Pro Preview')
+				.setValue(this.plugin.settings.geminiModel)
+				.onChange(async (value) => {
+					this.plugin.settings.geminiModel = value;
+					await this.plugin.saveSettings();
+				}));
 
 		new Setting(containerEl)
 			.setName('チャット履歴保存先フォルダ')

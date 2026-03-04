@@ -12,7 +12,7 @@ export class FileEditService {
 
 	constructor(app: App, apiKey: string, plugin: MyPlugin) {
 		this.app = app;
-		this.geminiService = new GeminiService(apiKey);
+		this.geminiService = new GeminiService(apiKey, plugin.settings.geminiModel);
 		this.plugin = plugin;
 		this.accessControl = new FolderAccessControl(plugin.settings);
 	}
@@ -181,8 +181,26 @@ ${referenceSection}
 		// 既存の差分ビューを閉じる
 		this.app.workspace.detachLeavesOfType(DIFF_VIEW_TYPE);
 
-		// 新しいペインで差分ビューを開く
-		const leaf = this.app.workspace.getLeaf('tab');
+		// 新しいペインで差分ビューを開く - より安全な方法で取得
+		let leaf: WorkspaceLeaf | null = null;
+		
+		try {
+			// 右側に分割して新しいleafを作成
+			leaf = this.app.workspace.getLeaf('split', 'vertical');
+			
+			// leafがまだnullの場合は、新しいleafを強制作成
+			if (!leaf) {
+				leaf = this.app.workspace.getLeaf(true);
+			}
+			
+			if (!leaf) {
+				throw new Error('Failed to create workspace leaf');
+			}
+		} catch (error) {
+			console.error('Failed to get leaf:', error);
+			new Notice('ワークスペースの準備に失敗しました');
+			return;
+		}
 		
 		await leaf.setViewState({
 			type: DIFF_VIEW_TYPE,

@@ -23,7 +23,7 @@ export class ChatView extends ItemView {
 
 	private initializeGeminiService() {
 		if (this.plugin.settings.geminiApiKey) {
-			this.geminiService = new GeminiService(this.plugin.settings.geminiApiKey);
+			this.geminiService = new GeminiService(this.plugin.settings.geminiApiKey, this.plugin.settings.geminiModel);
 		}
 	}
 
@@ -359,7 +359,7 @@ export class ChatView extends ItemView {
 
 			try {
 				// Initialize service with current API key
-				this.geminiService = new GeminiService(this.plugin.settings.geminiApiKey);
+				this.geminiService = new GeminiService(this.plugin.settings.geminiApiKey, this.plugin.settings.geminiModel);
 
 				// Call Gemini API
 				const response = await this.geminiService.chat(this.messageHistory);

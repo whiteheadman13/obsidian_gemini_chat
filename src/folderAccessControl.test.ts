@@ -5,6 +5,7 @@ import type { MyPluginSettings } from './settings';
 function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSettings {
 	return {
 		geminiApiKey: '',
+		geminiModel: 'gemini-3.1-flash-lite-preview',
 		chatHistoryFolder: 'Chat History',
 		agentAllowedFolders: [],
 		agentBlockedFolders: [],

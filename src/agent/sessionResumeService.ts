@@ -56,7 +56,7 @@ export class SessionResumeService {
 
         // Create agent with selected mode
         const gemini = this.plugin.settings.geminiApiKey 
-            ? new GeminiService(this.plugin.settings.geminiApiKey) 
+            ? new GeminiService(this.plugin.settings.geminiApiKey, this.plugin.settings.geminiModel) 
             : undefined;
         
         const agent = new InteractiveAgentService(

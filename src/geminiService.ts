@@ -18,9 +18,11 @@ export type ToolExecutor = (functionName: string, args: Record<string, any>) => 
 
 export class GeminiService {
 	private apiKey: string;
+	private model: string;
 
-	constructor(apiKey: string) {
+	constructor(apiKey: string, model: string = 'gemini-3.1-flash-lite-preview') {
 		this.apiKey = apiKey;
+		this.model = model;
 	}
 
 	async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
@@ -33,7 +35,7 @@ export class GeminiService {
 			throw new Error('Gemini API key is not set');
 		}
 
-		const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + this.apiKey, {
+		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=` + this.apiKey, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -104,7 +106,7 @@ export class GeminiService {
 		}));
 
 		for (let iteration = 0; iteration < maxIterations; iteration++) {
-			const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + this.apiKey, {
+			const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=` + this.apiKey, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
