@@ -1,0 +1,260 @@
+import { App, TFile, TFolder, Notice } from 'obsidian';
+import { FolderAccessControl } from './folderAccessControl';
+
+/**
+ * @参照の解析結果
+ */
+export interface ParsedAtReference {
+	type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder';
+	filePath: string;
+	isValid: boolean;
+	error?: string;
+	file?: TFile;
+	content?: string;
+}
+
+/**
+ * @参照機能を管理するサービス
+ */
+export class ChatReferenceService {
+	private app: App;
+	private folderAccessControl: FolderAccessControl | null = null;
+
+	constructor(app: App, folderAccessControl?: FolderAccessControl) {
+		this.app = app;
+		this.folderAccessControl = folderAccessControl || null;
+	}
+
+	/**
+	 * テキストから @参照 をパース
+	 * 例: "@outNoteFormat:課題整理テンプレート.md @instruction:組織方針.md"
+	 */
+	parseAtReferences(text: string): {
+		references: ParsedAtReference[];
+		cleanedText: string;
+	} {
+		// @参照の正規表現: @(outNoteFormat|instruction|reference|outFolder):filepath
+		const atRefPattern = /@(outNoteFormat|instruction|reference|outFolder):([^\s]+)/g;
+		const references: ParsedAtReference[] = [];
+		let match;
+
+		while ((match = atRefPattern.exec(text)) !== null) {
+			references.push({
+				type: match[1] as 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder',
+				filePath: match[2] || '',
+				isValid: false, // 後で検証
+			});
+		}
+
+		// クリーンアップ: @参照を本文から削除
+		const cleanedText = text.replace(/@(outNoteFormat|instruction|reference|outFolder):[^\s]+/g, '').trim();
+
+		return { references, cleanedText };
+	}
+
+	/**
+	 * パースされた参照を検証＆読み込み
+	 */
+	async resolveReferences(
+		references: ParsedAtReference[]
+	): Promise<ParsedAtReference[]> {
+		const resolved: ParsedAtReference[] = [];
+
+		for (const ref of references) {
+			try {
+				// @outFolder の場合はフォルダを検索
+				if (ref.type === 'outFolder') {
+					const folder = this.app.vault.getAbstractFileByPath(ref.filePath);
+
+					if (!folder || !(folder instanceof TFolder)) {
+						resolved.push({
+							...ref,
+							isValid: false,
+							error: `フォルダが見つかりません: ${ref.filePath}`,
+						});
+						continue;
+					}
+
+					resolved.push({
+						...ref,
+						isValid: true,
+						file: undefined, // フォルダなので file プロパティは不使用
+						content: ref.filePath, // pathをcontentに格納
+					});
+					continue;
+				}
+
+				// その他（outNoteFormat, instruction, reference）はファイルを検索
+				const file = this.app.vault.getAbstractFileByPath(ref.filePath);
+
+				if (!file || !(file instanceof TFile)) {
+					resolved.push({
+						...ref,
+						isValid: false,
+						error: `ファイルが見つかりません: ${ref.filePath}`,
+					});
+					continue;
+				}
+
+				// 権限チェック（folderAccessControlが設定されている場合）
+				if (this.folderAccessControl && !this.folderAccessControl.isFileAccessAllowed(file)) {
+					resolved.push({
+						...ref,
+						isValid: false,
+						error: `アクセス権限がありません: ${ref.filePath}`,
+					});
+					continue;
+				}
+
+				// ファイルサイズチェック（100KB以上は警告）
+				const stat = await this.app.vault.adapter.stat(file.path);
+				if (stat && stat.size > 100 * 1024) {
+					console.warn(`Large file reference: ${ref.filePath} (${stat.size} bytes)`);
+				}
+
+				// ファイル内容を読み込み
+				const content = await this.app.vault.read(file);
+
+				resolved.push({
+					...ref,
+					isValid: true,
+					file,
+					content,
+				});
+			} catch (error) {
+				resolved.push({
+					...ref,
+					isValid: false,
+					error: `エラーが発生しました: ${error instanceof Error ? error.message : String(error)}`,
+				});
+			}
+		}
+
+		return resolved;
+	}
+
+	/**
+	 * 無効な参照をチェック＆ユーザーに通知
+	 */
+	validateReferences(references: ParsedAtReference[]): boolean {
+		const invalidRefs = references.filter(ref => !ref.isValid);
+
+		if (invalidRefs.length === 0) {
+			return true;
+		}
+
+		const errorMessages = invalidRefs.map(ref => `• ${ref.filePath}: ${ref.error}`).join('\n');
+		new Notice(
+			`以下の参照ファイルに問題があります:\n${errorMessages}`,
+			5000
+		);
+
+		return false;
+	}
+
+	/**
+	 * @参照をプロンプトに組み込む
+	 */
+	buildPromptWithReferences(
+		userMessage: string,
+		references: ParsedAtReference[]
+	): string {
+		const validRefs = references.filter(ref => ref.isValid);
+
+		if (validRefs.length === 0) {
+			return userMessage;
+		}
+
+		let prompt = userMessage;
+
+		// 出力ノートフォーマットを最初に追加
+		const formatRefs = validRefs.filter(ref => ref.type === 'outNoteFormat');
+		if (formatRefs.length > 0) {
+			prompt += '\n\n【出力ノートフォーマット】';
+			formatRefs.forEach((ref, index) => {
+				prompt += `\n\n[フォーマット ${index + 1}: ${ref.file?.basename || ref.filePath}]\n\`\`\`\n${ref.content}\n\`\`\``;
+			});
+		}
+
+		// 指示事項を次に追加
+		const instructionRefs = validRefs.filter(ref => ref.type === 'instruction');
+		if (instructionRefs.length > 0) {
+			prompt += '\n\n【指示事項・ルール】';
+			instructionRefs.forEach((ref, index) => {
+				prompt += `\n\n[指示事項 ${index + 1}: ${ref.file?.basename || ref.filePath}]\n\`\`\`\n${ref.content}\n\`\`\``;
+			});
+		}
+
+		// 参考資料を次に追加
+		const refRefs = validRefs.filter(ref => ref.type === 'reference');
+		if (refRefs.length > 0) {
+			prompt += '\n\n【参考資料】';
+			refRefs.forEach((ref, index) => {
+				prompt += `\n\n[参考資料 ${index + 1}: ${ref.file?.basename || ref.filePath}]\n\`\`\`\n${ref.content}\n\`\`\``;
+			});
+		}
+
+		return prompt;
+	}
+
+	/**
+	 * @参照から出力先フォルダを取得
+	 */
+	getTargetFolder(references: ParsedAtReference[]): string | null {
+		const targetRef = references.find(ref => ref.type === 'outFolder' && ref.filePath);
+		return targetRef ? targetRef.filePath : null;
+	}
+
+	/**
+	 * AIの応答をファイルとして保存
+	 * @param folderPath 保存先フォルダのパス
+	 * @param fileName ファイル名（拡張子なし）
+	 * @param content ファイルの内容
+	 */
+	async saveResponseToFile(folderPath: string, fileName: string, content: string): Promise<TFile | null> {
+		try {
+			// フォルダが存在するか確認
+			const folder = this.app.vault.getAbstractFileByPath(folderPath);
+			if (!folder || !(folder instanceof TFolder)) {
+				new Notice(`フォルダが見つかりません: ${folderPath}`);
+				return null;
+			}
+
+			// ファイル名をサニタイズ
+			const cleanFileName = this.sanitizeFileName(fileName);
+			const filePath = `${folderPath}/${cleanFileName}.md`;
+
+			// 既に同名ファイルが存在する場合は、タイムスタンプを付加
+			let finalPath = filePath;
+			let fileExists = this.app.vault.getAbstractFileByPath(finalPath);
+			let counter = 1;
+			while (fileExists instanceof TFile) {
+				const timestamp = new Date().getTime();
+				const baseName = cleanFileName.replace(/[\s-._]*$/, '');
+				finalPath = `${folderPath}/${baseName}_${timestamp}_${counter}.md`;
+				fileExists = this.app.vault.getAbstractFileByPath(finalPath);
+				counter++;
+			}
+
+			// ファイルを作成
+			const newFile = await this.app.vault.create(finalPath, content);
+			new Notice(`ノートを保存しました: ${newFile.basename}`);
+			return newFile;
+		} catch (error) {
+			console.error('ファイル保存エラー:', error);
+			new Notice(`ファイル保存に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`);
+			return null;
+		}
+	}
+
+	/**
+	 * ファイル名をサニタイズ（不正な文字を削除）
+	 */
+	private sanitizeFileName(fileName: string): string {
+		// Obsidianで使用できない文字を削除: \ / : * ? " < > |
+		return fileName
+			.replace(/[\\/:"*?<>|]/g, '')
+			.replace(/^\s+|\s+$/g, '') // 前後の空白を削除
+			.substring(0, 200); // 長すぎない名前に制限
+	}
+}

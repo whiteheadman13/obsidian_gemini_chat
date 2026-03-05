@@ -209,4 +209,40 @@ export class GeminiService {
 		// Max iterations reached
 		throw new Error(`Max tool call iterations (${maxIterations}) reached without final response`);
 	}
+
+	/**
+	 * AIに短いタイトルを提案させる
+	 */
+	async generateTitle(prompt: string): Promise<string> {
+		if (!this.apiKey) {
+			throw new Error('Gemini API key is not set');
+		}
+
+		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=` + this.apiKey, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				contents: [{
+					role: 'user',
+					parts: [{ text: prompt }],
+				}],
+			}),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+		}
+
+		const data = await response.json();
+		const candidates = data.contents?.[0]?.parts || [];
+		const textPart = candidates.find((p: any) => p.text);
+		const text = textPart?.text || '';
+
+		// テキストから最初の行（最短のタイトル）を抽出
+		const lines = text.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+		return lines[0] || '新しいノート';
+	}
 }
