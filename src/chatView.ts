@@ -2,7 +2,6 @@ import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, TFile, TFolder } fro
 import { GeminiService } from './geminiService';
 import { ChatHistoryService } from './chatHistoryService';
 import { ChatReferenceService, type ParsedAtReference } from './chatReferenceService';
-import { promptForReferenceFiles } from './chatReferenceModal';
 import { SaveNoteModal } from './modals/saveNoteModal';
 import type MyPlugin from './main';
 
@@ -16,8 +15,6 @@ export class ChatView extends ItemView {
 	private messagesContainer: HTMLElement | null = null;
 	private inputField: HTMLTextAreaElement | null = null;
 	private autocompleteContainer: HTMLElement | null = null;
-	private referenceFiles: TFile[] = [];
-	private refFilesButton: HTMLButtonElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyPlugin) {
 		super(leaf);
@@ -75,16 +72,10 @@ export class ChatView extends ItemView {
 			cls: 'chat-button-row',
 		});
 
-		// 参考ファイルボタン（選択済み件数を表示）
-		this.refFilesButton = buttonRow.createEl('button', {
-			cls: 'chat-ref-files-button',
-			text: '参考ファイル',
-		}) as HTMLButtonElement;
-
-		const sendButton = buttonRow.createEl('button', {
-			cls: 'chat-send-button',
-			text: '送信',
-		});
+	const sendButton = buttonRow.createEl('button', {
+		cls: 'chat-send-button',
+		text: '送信',
+	});
 
 		const editNoteButton = buttonRow.createEl('button', {
 			cls: 'chat-edit-note-button',
@@ -99,15 +90,6 @@ export class ChatView extends ItemView {
 		const clearButton = buttonRow.createEl('button', {
 			cls: 'chat-clear-button',
 			text: '履歴をクリア',
-		});
-
-		this.refFilesButton.addEventListener('click', async () => {
-			const currentPaths = new Set(this.referenceFiles.map((f) => f.path));
-			const result = await promptForReferenceFiles(this.app, currentPaths);
-			if (result !== null) {
-				this.referenceFiles = result.referenceFiles;
-				this.updateRefFilesButton();
-			}
 		});
 
 		sendButton.addEventListener('click', async () => {
@@ -134,17 +116,6 @@ export class ChatView extends ItemView {
 				finalMessage = this.chatReferenceService.buildPromptWithReferences(cleanedText, resolvedReferences);
 			}
 
-			// 従来の参考ファイル（ボタンで選択）もサポート
-			if (this.referenceFiles.length > 0) {
-				const referenceContents = await Promise.all(
-					this.referenceFiles.map(async (file) => ({
-						path: file.path,
-						content: await this.app.vault.read(file),
-					}))
-				);
-				finalMessage = this.buildMessageWithReferences(finalMessage, referenceContents);
-			}
-
 			this.handleSendMessage(finalMessage, resolvedReferences);
 			this.inputField.value = '';
 		});
@@ -160,7 +131,7 @@ export class ChatView extends ItemView {
 				new Notice('編集対象のファイルを開いてください');
 				return;
 			}
-			await this.plugin.fileEditService.editFileWithAI(instruction, this.referenceFiles);
+			await this.plugin.fileEditService.editFileWithAI(instruction, []);
 			this.inputField.value = '';
 		});
 
@@ -170,8 +141,6 @@ export class ChatView extends ItemView {
 
 		clearButton.addEventListener('click', () => {
 			this.messageHistory = [];
-			this.referenceFiles = [];
-			this.updateRefFilesButton();
 			if (this.messagesContainer) {
 				this.messagesContainer.empty();
 			}
@@ -211,12 +180,6 @@ export class ChatView extends ItemView {
 
 	async onClose() {
 		// Nothing to clean up
-	}
-
-	private updateRefFilesButton() {
-		if (!this.refFilesButton) return;
-		const count = this.referenceFiles.length;
-		this.refFilesButton.textContent = count > 0 ? `参考ファイル (${count})` : '参考ファイル';
 	}
 
 	private isMarkdownTableLine(line: string): boolean {
@@ -363,21 +326,6 @@ export class ChatView extends ItemView {
 				i++;
 			}
 		}
-	}
-
-	private buildMessageWithReferences(
-		userMessage: string,
-		referenceContents: Array<{ path: string; content: string }>
-	): string {
-		if (referenceContents.length === 0) {
-			return userMessage;
-		}
-
-		let message = userMessage;
-		referenceContents.forEach((ref, index) => {
-			message += `\n\n[参考資料 ${index + 1}: ${ref.path}]\n\`\`\`\n${ref.content}\n\`\`\``;
-		});
-		return message;
 	}
 
 	private async handleSendMessage(message: string, references: ParsedAtReference[] = []) {
