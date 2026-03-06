@@ -161,6 +161,40 @@ If your plugin does not need CSS, delete this file.
 	background-color: var(--interactive-accent-hover);
 }
 
+/* Attached file link chips */
+.chat-file-attachments {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.chat-file-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 10px;
+	border-radius: 12px;
+	background-color: rgba(255, 255, 255, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.25);
+	font-size: 0.85em;
+}
+
+.chat-file-link {
+	color: var(--link-color);
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.chat-file-link:hover {
+	text-decoration: underline;
+}
+
+.chat-file-type {
+	opacity: 0.6;
+	font-size: 0.9em;
+}
+
 /* Chat file details (collapsible) */
 .chat-file-details {
 	margin-top: 8px;

@@ -260,19 +260,23 @@ export class ChatView extends ItemView {
 		await MarkdownRenderer.render(this.app, normalizedContent, messageContentEl, '/', this);
 	}
 
-	private renderUserMessage(container: HTMLElement, message: string): void {
-		// 参考資料を含むメッセージかチェック
-		const hasReferences = message.includes('[参考資料');
+	private renderUserMessage(container: HTMLElement, message: string, references: ParsedAtReference[] = []): void {
+		// セクションマーカーを検出
+		const sectionMarkers = ['【参考資料】', '【添付ファイル】', '【指示事項・ルール】', '【出力ノートフォーマット】'];
+		const markerIndexes = sectionMarkers.map(m => message.indexOf(m)).filter(idx => idx !== -1);
+		const hasReferences = markerIndexes.length > 0 || message.includes('[参考資料');
 		if (!hasReferences) {
 			// 通常のメッセージ
 			container.setText(message);
 			return;
 		}
 
-		// 最初の[参考資料...]までをテキスト部分とする
-		const referenceIndex = message.indexOf('[参考資料');
-		const textPart = message.substring(0, referenceIndex).trim();
-		const referencesPart = message.substring(referenceIndex);
+		// 最初のセクションより前をテキスト部分とする
+		const firstMarkerIdx = markerIndexes.length > 0
+			? Math.min(...markerIndexes)
+			: message.indexOf('[参考資料');
+		const textPart = message.substring(0, firstMarkerIdx).trim();
+		const referencesPart = message.substring(firstMarkerIdx);
 
 		// ユーザーのテキスト部分
 		if (textPart) {
@@ -283,12 +287,48 @@ export class ChatView extends ItemView {
 			textEl.style.marginBottom = '8px';
 		}
 
+		// 添付ファイルをリンクチップとして表示
+		const fileRefs = references.filter(ref => ref.type === 'file' && ref.isValid);
+		if (fileRefs.length > 0) {
+			const fileLinksEl = container.createEl('div', { cls: 'chat-file-attachments' });
+			fileRefs.forEach(ref => {
+				const chip = fileLinksEl.createEl('span', { cls: 'chat-file-chip' });
+				chip.createSpan({ text: '📎 ', cls: 'chat-file-icon' });
+				const nameEl = chip.createEl('a', {
+					text: ref.file?.basename || ref.filePath,
+					cls: 'chat-file-link',
+				});
+				nameEl.setAttribute('href', '#');
+				if (ref.fileType) {
+					chip.createSpan({ text: ` (${ref.fileType.toUpperCase()})`, cls: 'chat-file-type' });
+				}
+				nameEl.addEventListener('click', (e) => {
+					e.preventDefault();
+					if (ref.file) {
+						this.app.workspace.openLinkText(ref.file.path, '', false);
+					}
+				});
+			});
+		}
+
 		// 参考資料を表示
 		const referencesLines = referencesPart.split('\n');
 		let i = 0;
 		while (i < referencesLines.length) {
 			const line = referencesLines[i] ?? '';
-			if (line.match(/^\[参考資料.*?:.*?\]$/)) {
+			if (line.match(/^\[添付ファイル.*?:.*?\]$/)) {
+				// リンクは上で表示済みのためコンテンツブロックをスキップ
+				i++;
+				let inBlock = false;
+				while (i < referencesLines.length) {
+					const l = referencesLines[i] ?? '';
+					if (l.trim() === '```') {
+						if (!inBlock) { inBlock = true; i++; continue; }
+						else { i++; break; }
+					}
+					i++;
+				}
+			} else if (line.match(/^\[参考資料.*?:.*?\]$/)) {
 				const detailsEl = container.createEl('details', {
 					cls: 'chat-file-details'
 				});
@@ -361,7 +401,7 @@ export class ChatView extends ItemView {
 			const userMessageContentEl = userMessageEl.createEl('div', {
 				cls: 'chat-message-content',
 			});
-			this.renderUserMessage(userMessageContentEl, message);
+			this.renderUserMessage(userMessageContentEl, message, references);
 		}
 
 		// Add to message history
