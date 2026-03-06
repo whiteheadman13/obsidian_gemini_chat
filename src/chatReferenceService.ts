@@ -1,16 +1,18 @@
 import { App, TFile, TFolder, Notice } from 'obsidian';
 import { FolderAccessControl } from './folderAccessControl';
+import { FileExtractionService } from './fileExtractionService';
 
 /**
  * @参照の解析結果
  */
 export interface ParsedAtReference {
-	type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder';
+	type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder' | 'file';
 	filePath: string;
 	isValid: boolean;
 	error?: string;
 	file?: TFile;
 	content?: string;
+	fileType?: string; // PDF, PPTX, DOCX 等
 }
 
 /**
@@ -27,27 +29,27 @@ export class ChatReferenceService {
 
 	/**
 	 * テキストから @参照 をパース
-	 * 例: "@outNoteFormat:課題整理テンプレート.md @instruction:組織方針.md"
+	 * 例: "@outNoteFormat:課題整理テンプレート.md @instruction:組織方針.md @file:presentation.pptx"
 	 */
 	parseAtReferences(text: string): {
 		references: ParsedAtReference[];
 		cleanedText: string;
 	} {
-		// @参照の正規表現: @(outNoteFormat|instruction|reference|outFolder):filepath
-		const atRefPattern = /@(outNoteFormat|instruction|reference|outFolder):([^\s]+)/g;
+		// @参照の正規表現: @(outNoteFormat|instruction|reference|outFolder|file):filepath
+		const atRefPattern = /@(outNoteFormat|instruction|reference|outFolder|file):([^\s]+)/g;
 		const references: ParsedAtReference[] = [];
 		let match;
 
 		while ((match = atRefPattern.exec(text)) !== null) {
 			references.push({
-				type: match[1] as 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder',
+				type: match[1] as 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder' | 'file',
 				filePath: match[2] || '',
 				isValid: false, // 後で検証
 			});
 		}
 
 		// クリーンアップ: @参照を本文から削除
-		const cleanedText = text.replace(/@(outNoteFormat|instruction|reference|outFolder):[^\s]+/g, '').trim();
+		const cleanedText = text.replace(/@(outNoteFormat|instruction|reference|outFolder|file):[^\s]+/g, '').trim();
 
 		return { references, cleanedText };
 	}
@@ -80,6 +82,78 @@ export class ChatReferenceService {
 						isValid: true,
 						file: undefined, // フォルダなので file プロパティは不使用
 						content: ref.filePath, // pathをcontentに格納
+					});
+					continue;
+				}
+
+				// @file の場合はファイルを抽出
+				if (ref.type === 'file') {
+					const file = this.app.vault.getAbstractFileByPath(ref.filePath);
+
+					if (!file || !(file instanceof TFile)) {
+						resolved.push({
+							...ref,
+							isValid: false,
+							error: `ファイルが見つかりません: ${ref.filePath}`,
+						});
+						continue;
+					}
+
+					// ファイル形式のチェック
+					if (!FileExtractionService.isSupportedFileType(ref.filePath)) {
+						resolved.push({
+							...ref,
+							isValid: false,
+							error: `未対応のファイル形式です: ${ref.filePath}`,
+							fileType: FileExtractionService.getFileType(ref.filePath),
+						});
+						continue;
+					}
+
+					// 権限チェック
+					if (this.folderAccessControl && !this.folderAccessControl.isFileAccessAllowed(file)) {
+						resolved.push({
+							...ref,
+							isValid: false,
+							error: `アクセス権限がありません: ${ref.filePath}`,
+						});
+						continue;
+					}
+
+					// ファイルサイズチェック（PDF/PPTX は大きくなりやすい。10MB まで許可）
+					const stat = await this.app.vault.adapter.stat(file.path);
+					if (stat && stat.size > 10 * 1024 * 1024) {
+						resolved.push({
+							...ref,
+							isValid: false,
+							error: `ファイルが大きすぎます（${(stat.size / 1024 / 1024).toFixed(1)}MB）。最大10MB までです。`,
+						});
+						continue;
+					}
+
+					// バイナリデータを読み込み
+					const arrayBuffer = await this.readBinaryFile(file);
+
+					// テキスト抽出
+					const extractionService = new FileExtractionService();
+					const extractionResult = await extractionService.extractText(arrayBuffer, file.name);
+
+					if (!extractionResult.success) {
+						resolved.push({
+							...ref,
+							isValid: false,
+							error: extractionResult.error,
+							fileType: extractionResult.fileType,
+						});
+						continue;
+					}
+
+					resolved.push({
+						...ref,
+						isValid: true,
+						file,
+						content: extractionResult.content,
+						fileType: extractionResult.fileType,
 					});
 					continue;
 				}
@@ -131,6 +205,13 @@ export class ChatReferenceService {
 		}
 
 		return resolved;
+	}
+
+	/**
+	 * バイナリファイルを読み込み
+	 */
+	private async readBinaryFile(file: TFile): Promise<ArrayBuffer> {
+		return await this.app.vault.readBinary(file);
 	}
 
 	/**
@@ -191,6 +272,17 @@ export class ChatReferenceService {
 			prompt += '\n\n【参考資料】';
 			refRefs.forEach((ref, index) => {
 				prompt += `\n\n[参考資料 ${index + 1}: ${ref.file?.basename || ref.filePath}]\n\`\`\`\n${ref.content}\n\`\`\``;
+			});
+		}
+
+		// 添付ファイル（PDF/PPTX/DOCX/TXT）を追加
+		const fileRefs = validRefs.filter(ref => ref.type === 'file');
+		if (fileRefs.length > 0) {
+			prompt += '\n\n【添付ファイル】';
+			fileRefs.forEach((ref, index) => {
+				const label = ref.file?.basename || ref.filePath;
+				const typeLabel = ref.fileType ? ref.fileType.toUpperCase() : 'FILE';
+				prompt += `\n\n[添付ファイル ${index + 1}: ${label} (${typeLabel})]\n\`\`\`\n${ref.content}\n\`\`\``;
 			});
 		}
 

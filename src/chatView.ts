@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, TFile, TFolder } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer, TFile, TFolder, setIcon, SuggestModal } from 'obsidian';
 import { GeminiService } from './geminiService';
 import { ChatHistoryService } from './chatHistoryService';
 import { ChatReferenceService, type ParsedAtReference } from './chatReferenceService';
@@ -57,7 +57,7 @@ export class ChatView extends ItemView {
 		this.inputField = inputContainer.createEl('textarea', {
 			cls: 'chat-input',
 			attr: {
-				placeholder: 'メッセージを入力... (@outNoteFormat: @instruction: @reference: @outFolder: で参照可能、Ctrl+Enterで送信)',
+				placeholder: 'メッセージを入力... (@outNoteFormat: @instruction: @reference: @outFolder: @file: で参照可能、Ctrl+Enterで送信)',
 				rows: '3',
 			},
 		});
@@ -77,6 +77,15 @@ export class ChatView extends ItemView {
 		text: '送信',
 	});
 
+		const attachButton = buttonRow.createEl('button', {
+			cls: 'chat-attach-button',
+			attr: {
+				'title': 'ファイルを添付',
+				'aria-label': 'ファイルを添付',
+			},
+		});
+		setIcon(attachButton, 'paperclip');
+
 		const editNoteButton = buttonRow.createEl('button', {
 			cls: 'chat-edit-note-button',
 			text: 'AIでノート編集',
@@ -91,6 +100,13 @@ export class ChatView extends ItemView {
 			cls: 'chat-clear-button',
 			text: '履歴をクリア',
 		});
+
+		attachButton.addEventListener('click', async () => {
+			await this.openAttachmentSelector();
+		});
+
+		// ドラッグ&ドロップイベントを追加
+		this.setupDragAndDrop(inputContainer);
 
 		sendButton.addEventListener('click', async () => {
 			if (!this.inputField) return;
@@ -547,8 +563,8 @@ export class ChatView extends ItemView {
 			return;
 		}
 
-		// 入力パターンを解析（@outNoteFormat: / @instruction: / @reference: / @outFolder:）
-		const match = atToken.match(/^@(outNoteFormat|instruction|reference|outFolder):(.*)$/);
+		// 入力パターンを解析（@outNoteFormat: / @instruction: / @reference: / @outFolder: / @file:）
+		const match = atToken.match(/^@(outNoteFormat|instruction|reference|outFolder|attachment):(.*)$/);
 		if (!match) {
 			this.autocompleteContainer.style.display = 'none';
 			return;
@@ -590,8 +606,8 @@ export class ChatView extends ItemView {
 		// @から現在のカーソル位置までのトークンを取得
 		const token = beforeCursor.substring(lastAtIndex);
 
-		// @だけ、または @(outNoteFormat|instruction|reference|outFolder):で始まるかチェック
-		if (token === '@' || /^@(outNoteFormat|instruction|reference|outFolder):?(?:[^\s]*)?$/.test(token)) {
+		// @だけ、または @(outNoteFormat|instruction|reference|outFolder|file):で始まるかチェック
+		if (token === '@' || /^@(outNoteFormat|instruction|reference|outFolder|file):?(?:[^\s]*)?$/.test(token)) {
 			return token;
 		}
 
@@ -659,6 +675,7 @@ export class ChatView extends ItemView {
 			{ value: 'instruction', label: 'instruction: 指示事項・ルール', description: '遵守すべき制約条件・ガイドライン' },
 			{ value: 'reference', label: 'reference: 参考資料', description: '背景情報・過去の事例・参考データ' },
 			{ value: 'outFolder', label: 'outFolder: 出力先フォルダ', description: '結果の保存先を指定' },
+			{ value: 'file', label: 'file: 添付ファイル', description: 'PDF、PowerPoint、Word、テキストファイル' },
 		];
 
 		// partialInputでフィルタリング
@@ -737,7 +754,7 @@ export class ChatView extends ItemView {
 	 * 補完リストを描画＆表示
 	 */
 	private renderAutocompleteList(
-		type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder',
+		type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder' | 'file',
 		pattern: string,
 		files: TFile[],
 		currentToken: string
@@ -746,11 +763,21 @@ export class ChatView extends ItemView {
 
 		this.autocompleteContainer.empty();
 
+		// file 型の場合は対応するファイル形式だけをフィルタリング
+		let filteredFiles = files;
+		if (type === 'file') {
+			const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt'];
+			filteredFiles = files.filter(file => {
+				const ext = file.extension.toLowerCase();
+				return supportedExtensions.includes(ext);
+			});
+		}
+
 		const listEl = this.autocompleteContainer.createEl('ul', {
 			cls: 'chat-autocomplete-list',
 		});
 
-		files.forEach((file, index) => {
+		filteredFiles.forEach((file, index) => {
 			const itemEl = listEl.createEl('li', {
 				cls: 'chat-autocomplete-item',
 				attr: {
@@ -818,7 +845,7 @@ export class ChatView extends ItemView {
 	/**
 	 * オートコンプリート選択をテキストに挿入
 	 */
-	private insertAutocompleteSelection(type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder', filePath: string) {
+	private insertAutocompleteSelection(type: 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder' | 'file', filePath: string) {
 		if (!this.inputField) return;
 
 		const text = this.inputField.value;
@@ -996,5 +1023,210 @@ export class ChatView extends ItemView {
 
 		// フォーカスを戻す
 		this.inputField.focus();
+	}
+
+	/**
+	 * 添付ファイル選択モーダルを開く
+	 */
+	private async openAttachmentSelector() {
+		// Vault からすべてのファイルを取得
+		const allFiles = this.app.vault.getFiles();
+
+		// 対応するファイル形式だけをフィルタリング
+		const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt'];
+		const attachmentFiles = allFiles.filter(file => {
+			const ext = file.extension.toLowerCase();
+			return supportedExtensions.includes(ext);
+		});
+
+		if (attachmentFiles.length === 0) {
+			new Notice('対応するファイル（PDF、PowerPoint、Word、テキスト）が見つかりません');
+			return;
+		}
+
+		// ファイル選択モーダルを開く
+		const modal = new AttachmentFileModal(this.app, attachmentFiles, (filePath: string) => {
+			this.insertAttachmentReference(filePath);
+		});
+		modal.open();
+	}
+
+	/**
+	 * 添付ファイル参照をテキストに挿入
+	 */
+	private insertAttachmentReference(filePath: string) {
+		if (!this.inputField) return;
+
+		const text = this.inputField.value;
+		const cursorPos = this.inputField.selectionStart;
+
+		// カーソル位置に挿入
+		const beforeCursor = text.substring(0, cursorPos);
+		const afterCursor = text.substring(cursorPos);
+
+		const attachmentRef = `@file:${filePath} `;
+		const newText = beforeCursor + attachmentRef + afterCursor;
+
+		// テキストフィールドを更新
+		this.inputField.value = newText;
+
+		// カーソル位置を更新
+		const newCursorPos = beforeCursor.length + attachmentRef.length;
+		this.inputField.selectionStart = newCursorPos;
+		this.inputField.selectionEnd = newCursorPos;
+
+		// フォーカスを戻す
+		this.inputField.focus();
+	}
+
+	/**
+	 * ドラッグ&ドロップをセットアップ
+	 */
+	private setupDragAndDrop(container: HTMLElement) {
+		container.addEventListener('dragover', (event: DragEvent) => {
+			event.preventDefault();
+			event.dataTransfer!.dropEffect = 'copy';
+			container.classList.add('drag-over');
+		});
+
+		container.addEventListener('dragleave', (event: DragEvent) => {
+			// イベントが実際に要素から離れた場合のみ
+			if (event.target === container) {
+				container.classList.remove('drag-over');
+			}
+		});
+
+		container.addEventListener('drop', async (event: DragEvent) => {
+			event.preventDefault();
+			container.classList.remove('drag-over');
+
+			const files = event.dataTransfer?.files;
+			if (!files || files.length === 0) {
+				new Notice('ファイルをドロップしてください');
+				return;
+			}
+
+			// サポート形式のファイルだけを処理
+			const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt'];
+			const supportedFiles: File[] = [];
+			const unsupportedFiles: string[] = [];
+
+			for (let i = 0; i < files.length; i++) {
+				const file = files.item(i);
+				if (!file) continue;
+
+				const ext = file.name.split('.').pop()?.toLowerCase();
+
+				if (ext && supportedExtensions.includes(ext)) {
+					supportedFiles.push(file);
+				} else {
+					unsupportedFiles.push(file.name);
+				}
+			}
+
+			if (unsupportedFiles.length > 0) {
+				new Notice(
+					`以下のファイル形式はサポートされていません: ${unsupportedFiles.join(', ')}\n(対応: PDF, PowerPoint, Word, テキスト)`,
+					5000
+				);
+			}
+
+			if (supportedFiles.length === 0) {
+				return;
+			}
+
+			// ファイルを保存して参照を挿入
+			for (const file of supportedFiles) {
+				try {
+					console.log(`Processing file: ${file.name}`);
+					const savedPath = await this.saveAttachmentFile(file);
+					console.log(`Inserting reference: @file:${savedPath}`);
+					new Notice(`添付ファイルを保存しました: ${file.name}`, 3000);
+					this.insertAttachmentReference(savedPath);
+				} catch (error) {
+					const errorMsg = error instanceof Error ? error.message : String(error);
+					new Notice(`ファイル保存エラー: ${file.name}\n${errorMsg}`, 5000);
+					console.error(`Error processing ${file.name}:`, error);
+				}
+			}
+		});
+	}
+
+	/**
+	 * ファイルを Vault に保存
+	 */
+	private async saveAttachmentFile(file: File): Promise<string> {
+		// attachments/tmp フォルダを使用（一括削除しやすいように）
+		const attachmentsFolderPath = 'attachments/tmp';
+
+		// フォルダが存在しなければ作成
+		if (!this.app.vault.getAbstractFileByPath('attachments')) {
+			await this.app.vault.createFolder('attachments');
+		}
+		if (!this.app.vault.getAbstractFileByPath(attachmentsFolderPath)) {
+			await this.app.vault.createFolder(attachmentsFolderPath);
+		}
+
+		// ファイル名の重複を回避（タイムスタンプを付与）
+		const timestamp = Date.now();
+		const filePath = `${attachmentsFolderPath}/${timestamp}_${file.name}`;
+
+		// ファイルをバイナリで保存
+		const arrayBuffer = await file.arrayBuffer();
+		await this.app.vault.createBinary(filePath, arrayBuffer);
+
+		console.log(`File saved: ${filePath}`);
+		return filePath;
+	}
+}
+
+/**
+ * 添付ファイル選択用モーダル
+ */
+class AttachmentFileModal extends SuggestModal<TFile> {
+	private files: TFile[];
+	private onSelectCallback: (filePath: string) => void;
+
+	constructor(app: any, files: TFile[], onSelect: (filePath: string) => void) {
+		super(app);
+		this.files = files;
+		this.onSelectCallback = onSelect;
+		this.setPlaceholder('添付するファイルを検索...');
+		this.setInstructions([
+			{ command: '↑↓', purpose: '移動' },
+			{ command: 'Enter', purpose: '選択' },
+			{ command: 'Esc', purpose: 'キャンセル' },
+		]);
+	}
+
+	getSuggestions(query: string): TFile[] {
+		if (!query) {
+			return this.files;
+		}
+
+		const lowerQuery = query.toLowerCase();
+		return this.files.filter(file =>
+			file.name.toLowerCase().includes(lowerQuery) ||
+			file.path.toLowerCase().includes(lowerQuery)
+		);
+	}
+
+	renderSuggestion(file: TFile, el: HTMLElement) {
+		el.createEl('div', { cls: 'suggestion-item' });
+		const primaryEl = el.createEl('div', { cls: 'suggestion-content' });
+		primaryEl.createEl('span', { text: file.basename, cls: 'suggestion-title' });
+
+		// ファイルパスが長い場合は省略表示
+		const folderPath = file.path.substring(0, file.path.lastIndexOf('/'));
+		if (folderPath) {
+			primaryEl.createEl('span', {
+				text: ` (${folderPath})`,
+				cls: 'suggestion-aux',
+			});
+		}
+	}
+
+	onChooseSuggestion(file: TFile, evt: MouseEvent | KeyboardEvent) {
+		this.onSelectCallback(file.path);
 	}
 }
