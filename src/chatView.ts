@@ -191,6 +191,31 @@ export class ChatView extends ItemView {
 			this.inputField.addEventListener('input', () => {
 				this.updateAutocomplete();
 			});
+
+			// クリップボードからの画像貼り付け
+			this.inputField.addEventListener('paste', async (event: ClipboardEvent) => {
+				if (!event.clipboardData) return;
+				const items = Array.from(event.clipboardData.items);
+				const imageItems = items.filter(item => item.type.startsWith('image/'));
+				if (imageItems.length === 0) return;
+
+				event.preventDefault();
+				for (const item of imageItems) {
+					const blob = item.getAsFile();
+					if (!blob) continue;
+					// 拡張子を MIME タイプから決定
+					const ext = item.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+					const filename = `clipboard_${Date.now()}.${ext}`;
+					const file = new File([blob], filename, { type: item.type });
+					try {
+						const savedPath = await this.saveAttachmentFile(file);
+						new Notice(`クリップボード画像を保存しました: ${filename}`, 3000);
+						this.insertAttachmentReference(savedPath);
+					} catch (error) {
+						new Notice(`貼り付けエラー: ${error instanceof Error ? error.message : String(error)}`, 5000);
+					}
+				}
+			});
 		}
 	}
 
@@ -418,8 +443,16 @@ export class ChatView extends ItemView {
 				// Initialize service with current API key
 				this.geminiService = new GeminiService(this.plugin.settings.geminiApiKey, this.plugin.settings.geminiModel);
 
+				// 画像添付がある場合は inlineData として渡す
+				const inlineImages = references
+					.filter(ref => ref.type === 'file' && ref.isValid && ref.imageData && ref.mimeType)
+					.map(ref => ({ mimeType: ref.mimeType!, data: ref.imageData! }));
+
 				// Call Gemini API
-				const response = await this.geminiService.chat(this.messageHistory);
+				const response = await this.geminiService.chat(
+					this.messageHistory,
+					inlineImages.length > 0 ? inlineImages : undefined
+				);
 
 				// Remove loading indicator
 				loadingEl.remove();
@@ -806,7 +839,7 @@ export class ChatView extends ItemView {
 		// file 型の場合は対応するファイル形式だけをフィルタリング
 		let filteredFiles = files;
 		if (type === 'file') {
-			const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt'];
+			const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
 			filteredFiles = files.filter(file => {
 				const ext = file.extension.toLowerCase();
 				return supportedExtensions.includes(ext);
@@ -1073,14 +1106,14 @@ export class ChatView extends ItemView {
 		const allFiles = this.app.vault.getFiles();
 
 		// 対応するファイル形式だけをフィルタリング
-		const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt'];
+		const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
 		const attachmentFiles = allFiles.filter(file => {
 			const ext = file.extension.toLowerCase();
 			return supportedExtensions.includes(ext);
 		});
 
 		if (attachmentFiles.length === 0) {
-			new Notice('対応するファイル（PDF、PowerPoint、Word、テキスト）が見つかりません');
+			new Notice('対応するファイル（PDF、PowerPoint、Word、テキスト、画像）が見つかりません');
 			return;
 		}
 
@@ -1147,7 +1180,7 @@ export class ChatView extends ItemView {
 			}
 
 			// サポート形式のファイルだけを処理
-			const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt'];
+			const supportedExtensions = ['pdf', 'pptx', 'docx', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
 			const supportedFiles: File[] = [];
 			const unsupportedFiles: string[] = [];
 
@@ -1166,7 +1199,7 @@ export class ChatView extends ItemView {
 
 			if (unsupportedFiles.length > 0) {
 				new Notice(
-					`以下のファイル形式はサポートされていません: ${unsupportedFiles.join(', ')}\n(対応: PDF, PowerPoint, Word, テキスト)`,
+					`以下のファイル形式はサポートされていません: ${unsupportedFiles.join(', ')}\n(対応: PDF, PowerPoint, Word, テキスト, 画像)`,
 					5000
 				);
 			}

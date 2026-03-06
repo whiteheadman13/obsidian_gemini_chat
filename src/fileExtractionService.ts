@@ -15,6 +15,8 @@ export interface ExtractionResult {
 	content: string;
 	fileType: string;
 	error?: string;
+	imageData?: string;  // base64 encoded (画像ファイルのみ)
+	mimeType?: string;   // MIME タイプ (画像ファイルのみ)
 }
 
 /**
@@ -43,6 +45,12 @@ export class FileExtractionService {
 					return await this.extractFromDOCX(arrayBuffer);
 				case 'txt':
 					return this.extractFromTXT(arrayBuffer);
+				case 'png':
+				case 'jpg':
+				case 'jpeg':
+				case 'gif':
+				case 'webp':
+					return this.extractFromImage(arrayBuffer, ext);
 				default:
 					return {
 						success: false,
@@ -195,6 +203,31 @@ export class FileExtractionService {
 	}
 
 	/**
+	 * 画像ファイルを base64 に変換
+	 */
+	private extractFromImage(arrayBuffer: ArrayBuffer, ext: string): ExtractionResult {
+		const mimeTypes: Record<string, string> = {
+			png: 'image/png',
+			jpg: 'image/jpeg',
+			jpeg: 'image/jpeg',
+			gif: 'image/gif',
+			webp: 'image/webp',
+		};
+		const bytes = new Uint8Array(arrayBuffer);
+		let binary = '';
+		for (let i = 0; i < bytes.byteLength; i++) {
+			binary += String.fromCharCode(bytes[i] as number);
+		}
+		return {
+			success: true,
+			content: '',
+			fileType: ext,
+			imageData: btoa(binary),
+			mimeType: mimeTypes[ext] || 'image/png',
+		};
+	}
+
+	/**
 	 * ファイル名から拡張子を取得
 	 */
 	private getFileExtension(filename: string): string {
@@ -207,7 +240,12 @@ export class FileExtractionService {
 	 */
 	static isSupportedFileType(filename: string): boolean {
 		const ext = filename.split('.').pop()?.toLowerCase();
-		return ['pdf', 'pptx', 'docx', 'txt'].includes(ext || '');
+		return ['pdf', 'pptx', 'docx', 'txt', 'png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '');
+	}
+
+	static isImageType(filename: string): boolean {
+		const ext = filename.split('.').pop()?.toLowerCase();
+		return ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '');
 	}
 
 	/**

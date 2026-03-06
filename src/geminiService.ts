@@ -25,12 +25,18 @@ export class GeminiService {
 		this.model = model;
 	}
 
-	async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
-		const result = await this.chatWithMetadata(messages);
+	async chat(
+		messages: Array<{ role: string; content: string }>,
+		inlineImages?: Array<{ mimeType: string; data: string }>
+	): Promise<string> {
+		const result = await this.chatWithMetadata(messages, inlineImages);
 		return result.text;
 	}
 
-	async chatWithMetadata(messages: Array<{ role: string; content: string }>): Promise<{ text: string; references: string[] }> {
+	async chatWithMetadata(
+		messages: Array<{ role: string; content: string }>,
+		inlineImages?: Array<{ mimeType: string; data: string }>
+	): Promise<{ text: string; references: string[] }> {
 		if (!this.apiKey) {
 			throw new Error('Gemini API key is not set');
 		}
@@ -41,13 +47,18 @@ export class GeminiService {
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
-				contents: messages.map(msg => ({
-					role: msg.role === 'user' ? 'user' : 'model',
-					parts: [{ text: msg.content }],
-				})),
-				tools: [{
-					googleSearch: {}
-				}]
+				contents: messages.map((msg, index) => {
+					const isLastUser = msg.role === 'user' && index === messages.length - 1;
+					const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> =
+						[{ text: msg.content }];
+					if (isLastUser && inlineImages && inlineImages.length > 0) {
+						for (const img of inlineImages) {
+							parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+						}
+					}
+					return { role: msg.role === 'user' ? 'user' : 'model', parts };
+				}),
+				...(inlineImages && inlineImages.length > 0 ? {} : { tools: [{ googleSearch: {} }] })
 			}),
 		});
 

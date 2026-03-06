@@ -12,7 +12,9 @@ export interface ParsedAtReference {
 	error?: string;
 	file?: TFile;
 	content?: string;
-	fileType?: string; // PDF, PPTX, DOCX 等
+	fileType?: string;   // PDF, PPTX, DOCX 等
+	imageData?: string;  // base64 encoded (画像ファイルのみ)
+	mimeType?: string;   // MIME タイプ (画像ファイルのみ)
 }
 
 /**
@@ -154,6 +156,8 @@ export class ChatReferenceService {
 						file,
 						content: extractionResult.content,
 						fileType: extractionResult.fileType,
+						imageData: extractionResult.imageData,
+						mimeType: extractionResult.mimeType,
 					});
 					continue;
 				}
@@ -275,14 +279,24 @@ export class ChatReferenceService {
 			});
 		}
 
-		// 添付ファイル（PDF/PPTX/DOCX/TXT）を追加
-		const fileRefs = validRefs.filter(ref => ref.type === 'file');
+		// 添付ファイル（PDF/PPTX/DOCX/TXT）を追加（画像は除く）
+		const fileRefs = validRefs.filter(ref => ref.type === 'file' && !ref.imageData);
 		if (fileRefs.length > 0) {
 			prompt += '\n\n【添付ファイル】';
 			fileRefs.forEach((ref, index) => {
 				const label = ref.file?.basename || ref.filePath;
 				const typeLabel = ref.fileType ? ref.fileType.toUpperCase() : 'FILE';
 				prompt += `\n\n[添付ファイル ${index + 1}: ${label} (${typeLabel})]\n\`\`\`\n${ref.content}\n\`\`\``;
+			});
+		}
+
+		// 添付画像（実データは inlineData として別途送信するためファイル名のみ記載）
+		const imageRefs = validRefs.filter(ref => ref.type === 'file' && ref.imageData);
+		if (imageRefs.length > 0) {
+			prompt += '\n\n【添付画像】';
+			imageRefs.forEach((ref, index) => {
+				const label = ref.file?.basename || ref.filePath;
+				prompt += `\n[添付画像 ${index + 1}: ${label}]`;
 			});
 		}
 
