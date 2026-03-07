@@ -32,15 +32,20 @@ export class ChatHistoryService {
 			const firstUserMessage = messageHistory.find(m => m.role === 'user')?.content || 'Chat';
 			const sanitizedTitle = this.sanitizeFileName(firstUserMessage);
 
-			// Create filename
-			const fileName = `${sanitizedTitle}.md`;
-			const filePath = `${folderPath}/${fileName}`.replace(/\/+/g, '/');
+			// Create filename (with deduplication)
+			const basePath = `${folderPath}/${sanitizedTitle}`.replace(/\/+/g, '/');
+			let finalPath = `${basePath}.md`;
+			let counter = 1;
+			while (this.app.vault.getAbstractFileByPath(finalPath)) {
+				finalPath = `${basePath}_${counter}.md`;
+				counter++;
+			}
 
 			// Format message history as markdown
 			const content = this.formatChatHistory(messageHistory, new Date());
 
 			// Create the file
-			const file = await this.app.vault.create(filePath, content);
+			const file = await this.app.vault.create(finalPath, content);
 
 			new Notice('チャット履歴を保存しました');
 			return file;
