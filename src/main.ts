@@ -1,10 +1,11 @@
-import { Plugin, WorkspaceLeaf } from 'obsidian';
+import { Plugin, WorkspaceLeaf, Notice } from 'obsidian';
 import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
 import {ChatView, CHAT_VIEW_TYPE} from "./chatView";
 import {FileEditService} from "./fileEditService";
 import {DiffView, DIFF_VIEW_TYPE} from "./diffView";
 import { promptForEditRequest } from './editRequestModal';
 import { promptForAgentGoal } from './modals/agentPromptModal';
+import { promptNoteSplit, promptNoteSplitSelection } from './modals/noteSplitModal';
 import { createAgent } from './agent/adkAgent';
 import { AgentLogView, AGENT_LOG_VIEW_TYPE } from './agentLogView';
 import { SessionResumeService } from './agent/sessionResumeService';
@@ -65,6 +66,49 @@ export default class MyPlugin extends Plugin {
 
 				// FileEditServiceを使って編集
 				await this.fileEditService.editFileWithAI(request.instruction, request.referenceFiles);
+			}
+		});
+
+		// Add command to split a note into multiple notes with AI
+		this.addCommand({
+			id: 'split-note-with-ai',
+			name: 'AIでノートを分割',
+			editorCallback: async (_editor, view) => {
+				const file = view.file;
+				if (!file) return;
+
+				await promptNoteSplit(
+					this.app,
+					file,
+					this.settings.geminiApiKey,
+					this.settings.geminiModel,
+					this.settings.noteSplitCriteria
+				);
+			}
+		});
+
+		// Add command to split selected text into multiple notes with AI
+		this.addCommand({
+			id: 'split-selection-with-ai',
+			name: 'AIで選択範囲を分割',
+			editorCallback: async (editor, view) => {
+				const file = view.file;
+				if (!file) return;
+
+				const selectedText = editor.getSelection();
+				if (!selectedText.trim()) {
+					new Notice('テキストを選択してからコマンドを実行してください');
+					return;
+				}
+
+				await promptNoteSplitSelection(
+					this.app,
+					file,
+					selectedText,
+					this.settings.geminiApiKey,
+					this.settings.geminiModel,
+					this.settings.noteSplitCriteria
+				);
 			}
 		});
 

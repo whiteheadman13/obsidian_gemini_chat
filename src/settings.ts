@@ -9,7 +9,16 @@ export interface MyPluginSettings {
 	agentBlockedFolders: string[];
 	agentTemplateFolder: string;
 	agentTemplateFile: string;
+	noteSplitCriteria: string;
 }
+
+export const DEFAULT_NOTE_SPLIT_CRITERIA = `以下の知識タイプごとに分割してください（該当するものだけ）:
+- 概念 (Concept): 定義・用語の説明
+- 議論/主張 (Argument): 論理的推論・主張
+- 反論 (Counter-argument): 主張への反証
+- モデル (Model): 構造・関係性の説明
+- 仮説/理論 (Hypothesis/Theory): 検証可能な記述や理論
+- 経験的観察 (Empirical observation): データ・事実・測定結果`;
 
 export const DEFAULT_SETTINGS: MyPluginSettings = {
 	geminiApiKey: '',
@@ -18,7 +27,8 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	agentAllowedFolders: [],
 	agentBlockedFolders: [],
 	agentTemplateFolder: '',
-	agentTemplateFile: ''
+	agentTemplateFile: '',
+	noteSplitCriteria: DEFAULT_NOTE_SPLIT_CRITERIA
 }
 
 export class SampleSettingTab extends PluginSettingTab {
@@ -69,6 +79,26 @@ export class SampleSettingTab extends PluginSettingTab {
 					this.plugin.settings.chatHistoryFolder = value;
 					await this.plugin.saveSettings();
 				}));
+
+		// Note split settings
+		containerEl.createEl('h2', { text: 'ノート分割' });
+
+		new Setting(containerEl)
+			.setName('ノート分割の基準')
+			.setDesc('「AIでノートを分割」コマンド実行時のデフォルト分割基準を設定します')
+			.addTextArea(text => {
+				text
+					.setPlaceholder('分割基準を入力...')
+					.setValue(this.plugin.settings.noteSplitCriteria)
+					.onChange(async (value) => {
+						this.plugin.settings.noteSplitCriteria = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 10;
+				text.inputEl.style.width = '100%';
+				text.inputEl.style.fontFamily = 'var(--font-monospace)';
+				text.inputEl.style.fontSize = '13px';
+			});
 
 		// Agent template settings
 		containerEl.createEl('h2', {text: 'エージェントテンプレート'});

@@ -11,6 +11,7 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 		agentBlockedFolders: [],
 		agentTemplateFolder: '',
 		agentTemplateFile: '',
+		noteSplitCriteria: '',
 		...overrides,
 	};
 }
