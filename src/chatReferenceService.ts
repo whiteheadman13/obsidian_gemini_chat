@@ -50,8 +50,15 @@ export class ChatReferenceService {
 			});
 		}
 
-		// クリーンアップ: @参照を本文から削除
-		const cleanedText = text.replace(/@(outNoteFormat|instruction|reference|outFolder|file):[^\s]+/g, '').trim();
+		// クリーンアップ:
+		// - @file: → ファイル名（basename）に置換（どのファイルに言及しているか文脈を保持）
+		// - その他の @参照 → 削除（ユーザーには見えない制御用参照）
+		const cleanedText = text
+			.replace(/@file:([^\s]+)/g, (_match, filePath: string) => {
+				return filePath.split('/').pop() || filePath;
+			})
+			.replace(/@(outNoteFormat|instruction|reference|outFolder):[^\s]+/g, '')
+			.trim();
 
 		return { references, cleanedText };
 	}
