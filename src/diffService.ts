@@ -8,6 +8,7 @@ export interface DiffHunk {
 	newLines: number;
 	lines: string[];
 	header: string;
+	sectionTitle?: string;
 }
 
 export interface ParsedDiff {
@@ -22,7 +23,8 @@ export class DiffService {
 	 */
 	static computeDiff(oldText: string, newText: string): ParsedDiff {
 		const patch = Diff.createPatch('file', oldText, newText, '', '');
-		const hunks = this.parsePatch(patch, oldText, newText);
+		const parsedHunks = this.parsePatch(patch);
+		const hunks = this.splitHunksByMarkdownHeadings(parsedHunks, oldText, newText);
 		
 		return {
 			hunks,
@@ -34,7 +36,7 @@ export class DiffService {
 	/**
 	 * Unified Diff形式のパッチを解析し、Hunkのリストに変換
 	 */
-	private static parsePatch(patch: string, oldText: string, newText: string): DiffHunk[] {
+	private static parsePatch(patch: string): DiffHunk[] {
 		const lines = patch.split('\n');
 		const hunks: DiffHunk[] = [];
 		let currentHunk: DiffHunk | null = null;
@@ -75,6 +77,137 @@ export class DiffService {
 		return hunks;
 	}
 
+	private static splitHunksByMarkdownHeadings(
+		hunks: DiffHunk[],
+		oldText: string,
+		newText: string
+	): DiffHunk[] {
+		const oldLines = oldText.split('\n');
+		const newLines = newText.split('\n');
+		const splitHunks: DiffHunk[] = [];
+		let hunkIndex = 0;
+
+		for (const hunk of hunks) {
+			const parts = this.splitSingleHunkByMarkdownHeadings(hunk, oldLines, newLines);
+			for (const part of parts) {
+				splitHunks.push({
+					...part,
+					id: `hunk-${hunkIndex++}`,
+				});
+			}
+		}
+
+		return splitHunks;
+	}
+
+	private static splitSingleHunkByMarkdownHeadings(
+		hunk: DiffHunk,
+		oldLines: string[],
+		newLines: string[]
+	): DiffHunk[] {
+		if (!hunk.lines.some((line) => this.isHeadingBoundaryLine(line))) {
+			return [{
+				...hunk,
+				sectionTitle: this.findNearestSectionTitle(oldLines, hunk.oldStart)
+					?? this.findNearestSectionTitle(newLines, hunk.newStart),
+			}];
+		}
+
+		const parts: DiffHunk[] = [];
+		let currentLines: string[] = [];
+		let currentOldStart = hunk.oldStart;
+		let currentNewStart = hunk.newStart;
+		let oldCursor = hunk.oldStart;
+		let newCursor = hunk.newStart;
+		let currentSectionTitle = this.findNearestSectionTitle(oldLines, hunk.oldStart)
+			?? this.findNearestSectionTitle(newLines, hunk.newStart);
+
+		const finalizePart = () => {
+			if (!currentLines.some((line) => this.isChangedLine(line))) {
+				return;
+			}
+
+			parts.push({
+				id: hunk.id,
+				oldStart: currentOldStart,
+				oldLines: currentLines.filter((line) => !line.startsWith('+')).length,
+				newStart: currentNewStart,
+				newLines: currentLines.filter((line) => !line.startsWith('-')).length,
+				lines: [...currentLines],
+				header: hunk.header,
+				sectionTitle: currentSectionTitle,
+			});
+		};
+
+		hunk.lines.forEach((line, index) => {
+			if (
+				currentLines.length > 0
+				&& this.isHeadingBoundaryLine(line)
+				&& currentLines.some((entry) => this.isChangedLine(entry))
+				&& hunk.lines.slice(index).some((entry) => this.isChangedLine(entry))
+			) {
+				finalizePart();
+				currentLines = [];
+				currentOldStart = oldCursor;
+				currentNewStart = newCursor;
+				currentSectionTitle = this.extractSectionTitle(line) ?? currentSectionTitle;
+			}
+
+			if (currentLines.length === 0) {
+				currentSectionTitle = this.extractSectionTitle(line) ?? currentSectionTitle;
+			}
+
+			currentLines.push(line);
+			oldCursor += this.getOldLineDelta(line);
+			newCursor += this.getNewLineDelta(line);
+		});
+
+		finalizePart();
+
+		return parts.length > 0
+			? parts
+			: [{
+				...hunk,
+				sectionTitle: currentSectionTitle,
+			}];
+	}
+
+	private static isChangedLine(line: string): boolean {
+		return line.startsWith('+') || line.startsWith('-');
+	}
+
+	private static isHeadingBoundaryLine(line: string): boolean {
+		return this.extractSectionTitle(line) !== undefined;
+	}
+
+	private static extractSectionTitle(line: string): string | undefined {
+		const content = line.startsWith('+') || line.startsWith('-') || line.startsWith(' ')
+			? line.substring(1)
+			: line;
+		const match = content.match(/^(#{1,2})\s*(.+)$/);
+		const title = match?.[2];
+		return typeof title === 'string' ? title.trim() : undefined;
+	}
+
+	private static findNearestSectionTitle(lines: string[], lineNumber: number): string | undefined {
+		for (let index = Math.min(lineNumber - 1, lines.length - 1); index >= 0; index--) {
+			const title = this.extractSectionTitle(lines[index] ?? '');
+			if (title) {
+				return title;
+			}
+		}
+
+		return undefined;
+	}
+
+	private static getOldLineDelta(line: string): number {
+		return line.startsWith('+') ? 0 : 1;
+	}
+
+	private static getNewLineDelta(line: string): number {
+		return line.startsWith('-') ? 0 : 1;
+	}
+
 	/**
 	 * 選択されたHunkのみを元のテキストに適用する
 	 */
@@ -89,11 +222,9 @@ export class DiffService {
 
 		// 行単位で処理
 		const oldLines = oldText.split('\n');
-		const newLines = newText.split('\n');
 		const resultLines: string[] = [];
 		
 		let oldLineIndex = 0;
-		let newLineIndex = 0;
 
 		for (const hunk of diff.hunks) {
 			// Hunkの前の未変更部分をコピー

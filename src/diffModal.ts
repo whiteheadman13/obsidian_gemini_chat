@@ -107,7 +107,7 @@ export class DiffModal extends Modal {
 			});
 
 			headerEl.createSpan({ 
-				text: `変更箇所 ${index + 1}`,
+				text: hunk.sectionTitle ? `変更箇所 ${index + 1}: ${hunk.sectionTitle}` : `変更箇所 ${index + 1}`,
 				cls: 'diff-hunk-title'
 			});
 

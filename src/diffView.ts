@@ -186,7 +186,7 @@ export class DiffView extends ItemView {
 
 			const label = hunkItem.createEl('label');
 			label.createSpan({ 
-				text: `変更 ${index + 1}`,
+				text: hunk.sectionTitle ? `変更 ${index + 1}: ${hunk.sectionTitle}` : `変更 ${index + 1}`,
 				cls: 'diff-hunk-label'
 			});
 			label.createSpan({ 
