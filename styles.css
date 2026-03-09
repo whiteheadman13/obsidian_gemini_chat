@@ -652,6 +652,10 @@ If your plugin does not need CSS, delete this file.
 	background-color: var(--background-primary);
 }
 
+.diff-pane-single {
+	min-width: 0;
+}
+
 .diff-pane-left {
 	border-right: 1px solid var(--background-modifier-border);
 }

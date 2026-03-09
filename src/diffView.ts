@@ -12,7 +12,6 @@ export class DiffView extends ItemView {
 	private selectedHunks: Set<string>;
 	private hunks: DiffHunk[] = [];
 	private onApply: ((text: string) => void) | null = null;
-	private leftPane: HTMLElement | null = null;
 	private rightPane: HTMLElement | null = null;
 	private controlPanel: HTMLElement | null = null;
 
@@ -84,7 +83,7 @@ export class DiffView extends ItemView {
 		const header = container.createEl('div', { cls: 'diff-view-header' });
 		header.createEl('h3', { text: `変更の確認: ${this.file.name}` });
 		header.createEl('p', { 
-			text: '左が元のファイル、右が修正後です。適用したい変更を選択してください。',
+			text: '修正案のみを表示しています。元ノートは現在開いているノートを参照しながら、適用したい変更を選択してください。',
 			cls: 'diff-view-description'
 		});
 
@@ -117,18 +116,12 @@ export class DiffView extends ItemView {
 		this.controlPanel = container.createEl('div', { cls: 'diff-control-panel' });
 		this.renderControlPanel();
 
-		// Split view container
+		// 修正案表示コンテナ
 		const splitContainer = container.createEl('div', { cls: 'diff-split-container' });
 
-		// 左ペイン（元のファイル）
-		const leftContainer = splitContainer.createEl('div', { cls: 'diff-pane diff-pane-left' });
-		leftContainer.createEl('div', { cls: 'diff-pane-title', text: '元のファイル' });
-		this.leftPane = leftContainer.createEl('div', { cls: 'diff-pane-content' });
-		this.renderLeftPane();
-
-		// 右ペイン（修正後）
-		const rightContainer = splitContainer.createEl('div', { cls: 'diff-pane diff-pane-right' });
-		rightContainer.createEl('div', { cls: 'diff-pane-title', text: '修正後' });
+		// 単一ペイン（修正案）
+		const rightContainer = splitContainer.createEl('div', { cls: 'diff-pane diff-pane-single' });
+		rightContainer.createEl('div', { cls: 'diff-pane-title', text: '修正案' });
 		this.rightPane = rightContainer.createEl('div', { cls: 'diff-pane-content' });
 		this.renderRightPane();
 
@@ -208,44 +201,6 @@ export class DiffView extends ItemView {
 		});
 	}
 
-	private renderLeftPane() {
-		if (!this.leftPane) return;
-		this.leftPane.empty();
-
-		const lines = this.oldText.split('\n');
-		let lineNumber = 1;
-
-		lines.forEach((line, index) => {
-			const lineEl = this.leftPane!.createEl('div', { cls: 'diff-line-container' });
-			
-			// 行番号
-			const lineNumEl = lineEl.createEl('span', { 
-				cls: 'diff-line-number',
-				text: String(lineNumber)
-			});
-
-			// この行が変更される（削除される）かチェック
-			const isModified = this.isLineModifiedInOld(lineNumber);
-			const isSelected = this.isLineInSelectedHunk(lineNumber, true);
-			
-			// 行内容
-			const lineContentEl = lineEl.createEl('span', { 
-				cls: 'diff-line-content',
-				text: line || ' '
-			});
-
-			if (isModified) {
-				if (isSelected) {
-					lineEl.addClass('diff-line-removed-selected');
-				} else {
-					lineEl.addClass('diff-line-removed-unselected');
-				}
-			}
-
-			lineNumber++;
-		});
-	}
-
 	private renderRightPane() {
 		if (!this.rightPane) return;
 		this.rightPane.empty();
@@ -282,18 +237,6 @@ export class DiffView extends ItemView {
 
 			lineNumber++;
 		});
-	}
-
-	private isLineModifiedInOld(lineNumber: number): boolean {
-		for (const hunk of this.hunks) {
-			const start = hunk.oldStart;
-			const end = start + hunk.oldLines;
-			if (lineNumber >= start && lineNumber < end) {
-				// この行が削除または変更されているかチェック
-				return hunk.lines.some(line => line.startsWith('-'));
-			}
-		}
-		return false;
 	}
 
 	private isLineAddedInNew(lineNumber: number): boolean {
@@ -351,7 +294,6 @@ export class DiffView extends ItemView {
 
 	private refresh() {
 		this.renderControlPanel();
-		this.renderLeftPane();
 		this.renderRightPane();
 	}
 
