@@ -15,6 +15,7 @@ export class ChatView extends ItemView {
 	private messagesContainer: HTMLElement | null = null;
 	private inputField: HTMLTextAreaElement | null = null;
 	private autocompleteContainer: HTMLElement | null = null;
+	private googleSearchCheckbox: HTMLInputElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: MyPlugin) {
 		super(leaf);
@@ -52,6 +53,28 @@ export class ChatView extends ItemView {
 		// Create input area
 		const inputContainer = container.createEl('div', {
 			cls: 'chat-input-container',
+		});
+
+		// Create Google Search checkbox
+		const searchOptionsContainer = inputContainer.createEl('div', {
+			cls: 'chat-search-options',
+		});
+
+		const searchCheckboxLabel = searchOptionsContainer.createEl('label', {
+			cls: 'chat-search-checkbox-label',
+			attr: {
+				title: 'Google検索で最新情報を取得してAIが回答します（Gemini API組み込み機能）',
+			},
+		});
+
+		this.googleSearchCheckbox = searchCheckboxLabel.createEl('input', {
+			type: 'checkbox',
+			cls: 'chat-search-checkbox',
+		}) as HTMLInputElement;
+
+		searchCheckboxLabel.createSpan({
+			text: ' 🔍 Google検索を使用',
+			cls: 'chat-search-checkbox-text',
 		});
 
 		this.inputField = inputContainer.createEl('textarea', {
@@ -113,6 +136,9 @@ export class ChatView extends ItemView {
 			const inputText = this.inputField.value;
 			if (!inputText.trim()) return;
 
+			// Google検索が有効かチェック
+			const shouldUseGoogleSearch = this.googleSearchCheckbox?.checked || false;
+
 			// @参照をパース
 			const { references, cleanedText } = this.chatReferenceService.parseAtReferences(inputText);
 
@@ -132,13 +158,14 @@ export class ChatView extends ItemView {
 				finalMessage = this.chatReferenceService.buildPromptWithReferences(cleanedText, resolvedReferences);
 			}
 
-			this.handleSendMessage(finalMessage, resolvedReferences);
+			this.handleSendMessage(finalMessage, resolvedReferences, shouldUseGoogleSearch);
 			this.inputField.value = '';
 		});
 
 		editNoteButton.addEventListener('click', async () => {
 			if (!this.inputField) return;
 			const instruction = this.inputField.value.trim();
+			const shouldUseGoogleSearch = this.googleSearchCheckbox?.checked || false;
 			if (!instruction) {
 				new Notice('編集の指示をチャット欄に入力してください');
 				return;
@@ -147,7 +174,7 @@ export class ChatView extends ItemView {
 				new Notice('編集対象のファイルを開いてください');
 				return;
 			}
-			await this.plugin.fileEditService.editFileWithAI(instruction, []);
+			await this.plugin.fileEditService.editFileWithAI(instruction, [], shouldUseGoogleSearch);
 			this.inputField.value = '';
 		});
 
@@ -409,7 +436,7 @@ export class ChatView extends ItemView {
 		}
 	}
 
-	private async handleSendMessage(message: string, references: ParsedAtReference[] = []) {
+	private async handleSendMessage(message: string, references: ParsedAtReference[] = [], useGoogleSearch: boolean = false) {
 		if (!message.trim()) return;
 
 		// Check if API key is set
@@ -448,11 +475,15 @@ export class ChatView extends ItemView {
 					.filter(ref => ref.type === 'file' && ref.isValid && ref.imageData && ref.mimeType)
 					.map(ref => ({ mimeType: ref.mimeType!, data: ref.imageData! }));
 
-				// Call Gemini API
-				const response = await this.geminiService.chat(
+				// Call Gemini API (with metadata to get search references)
+				const result = await this.geminiService.chatWithMetadata(
 					this.messageHistory,
-					inlineImages.length > 0 ? inlineImages : undefined
+					inlineImages.length > 0 ? inlineImages : undefined,
+					useGoogleSearch
 				);
+
+				const response = result.text;
+				const searchReferences = result.references;
 
 				// Remove loading indicator
 				loadingEl.remove();
@@ -462,6 +493,33 @@ export class ChatView extends ItemView {
 					cls: 'chat-message assistant-message',
 				});
 				await this.renderAssistantMessage(assistantMessageEl, response);
+
+				// Google検索の参照を表示
+				if (useGoogleSearch && searchReferences.length > 0) {
+					const refsContainer = assistantMessageEl.createEl('div', {
+						cls: 'chat-search-references',
+					});
+					refsContainer.createEl('div', {
+						text: '🔍 参照元:',
+						cls: 'chat-search-references-title',
+					});
+					const refsList = refsContainer.createEl('ul', {
+						cls: 'chat-search-references-list',
+					});
+					searchReferences.slice(0, 5).forEach((url: string) => {
+						const li = refsList.createEl('li');
+						li.createEl('a', {
+							text: url,
+							href: url,
+							cls: 'external-link',
+						});
+					});
+				} else if (useGoogleSearch) {
+					assistantMessageEl.createEl('div', {
+						cls: 'chat-search-references-empty',
+						text: 'Google検索は有効でしたが、この応答では参照元メタデータが返されませんでした。',
+					});
+				}
 
 				// AIの応答がファイル編集に関連する場合、アクションボタンを追加
 				if (this.isFileEditResponse(response)) {

@@ -39,7 +39,11 @@ export class FileEditService {
 	/**
 	 * AIを使ってファイルを編集
 	 */
-	async editFileWithAI(instruction: string, referenceFiles: TFile[] = []): Promise<void> {
+	async editFileWithAI(
+		instruction: string,
+		referenceFiles: TFile[] = [],
+		useGoogleSearch: boolean = false
+	): Promise<void> {
 		const file = this.getActiveFile();
 		if (!file) return;
 
@@ -50,7 +54,12 @@ export class FileEditService {
 
 			// AIに修正案を依頼
 			new Notice('AIが修正案を生成中...');
-			const modifiedContent = await this.requestModification(content, instruction, referenceContents);
+			const { modifiedContent, searchReferences } = await this.requestModification(
+				content,
+				instruction,
+				referenceContents,
+				useGoogleSearch
+			);
 
 			// 差分をチェック
 			if (content === modifiedContent) {
@@ -59,7 +68,10 @@ export class FileEditService {
 			}
 
 			// 差分ビューを表示
-			await this.showDiffView(file, content, modifiedContent);
+			await this.showDiffView(file, content, modifiedContent, {
+				searchEnabled: useGoogleSearch,
+				searchReferences,
+			});
 
 		} catch (error) {
 			console.error('File edit error:', error);
@@ -74,8 +86,9 @@ export class FileEditService {
 	private async requestModification(
 		content: string,
 		instruction: string,
-		referenceNotes: Array<{ path: string; content: string }>
-	): Promise<string> {
+		referenceNotes: Array<{ path: string; content: string }>,
+		useGoogleSearch: boolean
+	): Promise<{ modifiedContent: string; searchReferences: string[] }> {
 		const referenceSection = this.buildReferenceSection(referenceNotes);
 
 		const prompt = `以下のマークダウンファイルを指示に従って修正してください。
@@ -95,9 +108,12 @@ ${referenceSection}
 
 修正後のファイル全文を出力してください。説明は不要です。コードブロックも不要です。ファイルの内容だけを出力してください。`;
 
-		const response = await this.geminiService.chat([
-			{ role: 'user', content: prompt }
-		]);
+		const result = await this.geminiService.chatWithMetadata(
+			[{ role: 'user', content: prompt }],
+			undefined,
+			useGoogleSearch
+		);
+		const response = result.text;
 
 		// コードブロックがある場合は除去
 		let cleanedResponse = response.trim();
@@ -115,7 +131,10 @@ ${referenceSection}
 			cleanedResponse = lines.join('\n');
 		}
 
-		return cleanedResponse;
+		return {
+			modifiedContent: cleanedResponse,
+			searchReferences: result.references,
+		};
 	}
 
 	private async loadReferenceContents(
@@ -177,7 +196,12 @@ ${referenceSection}
 	/**
 	 * 差分ビューを表示
 	 */
-	async showDiffView(file: TFile, oldContent: string, newContent: string): Promise<void> {
+	async showDiffView(
+		file: TFile,
+		oldContent: string,
+		newContent: string,
+		metadata?: { searchEnabled?: boolean; searchReferences?: string[] }
+	): Promise<void> {
 		// 既存の差分ビューを閉じる
 		this.app.workspace.detachLeavesOfType(DIFF_VIEW_TYPE);
 
@@ -214,6 +238,7 @@ ${referenceSection}
 				file,
 				oldContent,
 				newContent,
+				metadata,
 				async (finalContent: string) => {
 					try {
 						await this.app.vault.modify(file, finalContent);

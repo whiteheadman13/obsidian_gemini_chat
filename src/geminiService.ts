@@ -27,18 +27,40 @@ export class GeminiService {
 
 	async chat(
 		messages: Array<{ role: string; content: string }>,
-		inlineImages?: Array<{ mimeType: string; data: string }>
+		inlineImages?: Array<{ mimeType: string; data: string }>,
+		useGoogleSearch?: boolean
 	): Promise<string> {
-		const result = await this.chatWithMetadata(messages, inlineImages);
+		const result = await this.chatWithMetadata(messages, inlineImages, useGoogleSearch);
 		return result.text;
 	}
 
 	async chatWithMetadata(
 		messages: Array<{ role: string; content: string }>,
-		inlineImages?: Array<{ mimeType: string; data: string }>
+		inlineImages?: Array<{ mimeType: string; data: string }>,
+		useGoogleSearch?: boolean
 	): Promise<{ text: string; references: string[] }> {
 		if (!this.apiKey) {
 			throw new Error('Gemini API key is not set');
+		}
+
+		const requestBody: any = {
+			contents: messages.map((msg, index) => {
+				const isLastUser = msg.role === 'user' && index === messages.length - 1;
+				const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> =
+					[{ text: msg.content }];
+				if (isLastUser && inlineImages && inlineImages.length > 0) {
+					for (const img of inlineImages) {
+						parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+					}
+				}
+				return { role: msg.role === 'user' ? 'user' : 'model', parts };
+			}),
+		};
+
+		// Google Search Grounding を有効にする（チェックボックスがONの場合のみ）
+		// Gemini APIのREST指定は google_search。
+		if (useGoogleSearch) {
+			requestBody.tools = [{ google_search: {} }];
 		}
 
 		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=` + this.apiKey, {
@@ -46,20 +68,7 @@ export class GeminiService {
 			headers: {
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
-				contents: messages.map((msg, index) => {
-					const isLastUser = msg.role === 'user' && index === messages.length - 1;
-					const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> =
-						[{ text: msg.content }];
-					if (isLastUser && inlineImages && inlineImages.length > 0) {
-						for (const img of inlineImages) {
-							parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
-						}
-					}
-					return { role: msg.role === 'user' ? 'user' : 'model', parts };
-				}),
-				...(inlineImages && inlineImages.length > 0 ? {} : { tools: [{ googleSearch: {} }] })
-			}),
+			body: JSON.stringify(requestBody),
 		});
 
 		if (!response.ok) {

@@ -3,6 +3,7 @@ import { App, Modal, Notice, TFile } from 'obsidian';
 export interface EditRequest {
 	instruction: string;
 	referenceFiles: TFile[];
+	useGoogleSearch: boolean;
 }
 
 class EditRequestModal extends Modal {
@@ -10,6 +11,7 @@ class EditRequestModal extends Modal {
 	private allFiles: TFile[];
 	private selectedPaths: Set<string> = new Set();
 	private instructionInput: HTMLTextAreaElement | null = null;
+	private googleSearchCheckbox: HTMLInputElement | null = null;
 	private onResolve: (result: EditRequest | null) => void;
 	private isResolved = false;
 
@@ -45,6 +47,24 @@ class EditRequestModal extends Modal {
 		});
 		this.instructionInput.style.width = '100%';
 		this.instructionInput.style.marginBottom = '12px';
+
+		const searchOptionRow = contentEl.createDiv();
+		searchOptionRow.style.display = 'flex';
+		searchOptionRow.style.alignItems = 'center';
+		searchOptionRow.style.gap = '8px';
+		searchOptionRow.style.marginBottom = '12px';
+
+		const searchLabel = searchOptionRow.createEl('label', {
+			text: 'Google検索を使用',
+		});
+		searchLabel.style.display = 'flex';
+		searchLabel.style.alignItems = 'center';
+		searchLabel.style.gap = '8px';
+		searchLabel.style.cursor = 'pointer';
+		searchLabel.setAttribute('title', 'Gemini API組み込みのGoogle Search Groundingを使用します');
+
+		this.googleSearchCheckbox = searchLabel.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+		searchLabel.prepend(this.googleSearchCheckbox);
 
 		const controls = contentEl.createDiv();
 		controls.style.display = 'flex';
@@ -143,7 +163,11 @@ class EditRequestModal extends Modal {
 		}
 
 		const selectedFiles = this.allFiles.filter((file) => this.selectedPaths.has(file.path));
-		this.resolveOnce({ instruction, referenceFiles: selectedFiles });
+		this.resolveOnce({
+			instruction,
+			referenceFiles: selectedFiles,
+			useGoogleSearch: this.googleSearchCheckbox?.checked ?? false,
+		});
 		this.close();
 	}
 

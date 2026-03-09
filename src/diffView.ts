@@ -7,6 +7,8 @@ export class DiffView extends ItemView {
 	private file: TFile | null = null;
 	private oldText: string = '';
 	private newText: string = '';
+	private searchEnabled: boolean = false;
+	private searchReferences: string[] = [];
 	private selectedHunks: Set<string>;
 	private hunks: DiffHunk[] = [];
 	private onApply: ((text: string) => void) | null = null;
@@ -26,11 +28,14 @@ export class DiffView extends ItemView {
 		file: TFile,
 		oldText: string,
 		newText: string,
+		metadata: { searchEnabled?: boolean; searchReferences?: string[] } | undefined,
 		onApply: (text: string) => void
 	) {
 		this.file = file;
 		this.oldText = oldText;
 		this.newText = newText;
+		this.searchEnabled = metadata?.searchEnabled ?? false;
+		this.searchReferences = metadata?.searchReferences ?? [];
 		this.onApply = onApply;
 		
 		// 差分を計算
@@ -82,6 +87,31 @@ export class DiffView extends ItemView {
 			text: '左が元のファイル、右が修正後です。適用したい変更を選択してください。',
 			cls: 'diff-view-description'
 		});
+
+		if (this.searchEnabled) {
+			const refsContainer = container.createEl('div', { cls: 'diff-search-references' });
+			refsContainer.createEl('div', {
+				text: 'Google検索の参照元',
+				cls: 'diff-search-references-title',
+			});
+
+			if (this.searchReferences.length > 0) {
+				const refsList = refsContainer.createEl('ul', { cls: 'diff-search-references-list' });
+				this.searchReferences.slice(0, 5).forEach((url) => {
+					const item = refsList.createEl('li');
+					item.createEl('a', {
+						text: url,
+						href: url,
+						cls: 'external-link',
+					});
+				});
+			} else {
+				refsContainer.createEl('div', {
+					text: 'Google検索は有効でしたが、この編集では参照元メタデータが返されませんでした。',
+					cls: 'diff-search-references-empty',
+				});
+			}
+		}
 
 		// コントロールパネル
 		this.controlPanel = container.createEl('div', { cls: 'diff-control-panel' });

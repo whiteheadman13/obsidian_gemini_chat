@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	agentBlockedFolders: [],
 	agentTemplateFolder: '',
 	agentTemplateFile: '',
-	noteSplitCriteria: DEFAULT_NOTE_SPLIT_CRITERIA
+	noteSplitCriteria: DEFAULT_NOTE_SPLIT_CRITERIA,
 }
 
 export class SampleSettingTab extends PluginSettingTab {

@@ -65,7 +65,11 @@ export default class MyPlugin extends Plugin {
 				}
 
 				// FileEditServiceを使って編集
-				await this.fileEditService.editFileWithAI(request.instruction, request.referenceFiles);
+				await this.fileEditService.editFileWithAI(
+					request.instruction,
+					request.referenceFiles,
+					request.useGoogleSearch
+				);
 			}
 		});
 
