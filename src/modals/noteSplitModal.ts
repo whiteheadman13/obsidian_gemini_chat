@@ -1,5 +1,5 @@
-import { App, Modal, Notice, TFile } from 'obsidian';
-import { NoteSplitService, NotePart } from '../noteSplitService';
+import { App, Modal, Notice, TFile, TFolder } from 'obsidian';
+import { NoteCreateRequest, NoteSplitService, NotePart } from '../noteSplitService';
 
 type Phase = 'input' | 'loading' | 'preview' | 'creating';
 
@@ -32,6 +32,8 @@ class NoteSplitModal extends Modal {
 	private phase: Phase = 'input';
 	private criteriaTextarea: HTMLTextAreaElement | null = null;
 	private outputFolderInput: HTMLInputElement | null = null;
+	private defaultOutputFolder = '';
+	private partFolderInputs: Map<number, HTMLInputElement> = new Map();
 	private parts: NotePart[] = [];
 	private checkedParts: Set<number> = new Set();
 	private service: NoteSplitService;
@@ -108,18 +110,42 @@ class NoteSplitModal extends Modal {
 		this.criteriaTextarea.style.marginBottom = '12px';
 		this.criteriaTextarea.value = this.defaultCriteria;
 
-		contentEl.createEl('p', { text: '保存先フォルダ（空欄=元のノートと同じフォルダ）:' });
+		contentEl.createEl('p', { text: 'デフォルト保存先フォルダ（プレビューで分割案ごとに変更可能）:' });
 
-		this.outputFolderInput = contentEl.createEl('input', {
+		const outputFolderInputWrap = contentEl.createDiv();
+		outputFolderInputWrap.style.position = 'relative';
+
+		this.outputFolderInput = outputFolderInputWrap.createEl('input', {
 			type: 'text',
 			attr: { placeholder: '例: 分割後/ノート' },
 		});
 		this.outputFolderInput.style.width = '100%';
-		this.outputFolderInput.style.marginBottom = '16px';
+		outputFolderInputWrap.style.marginBottom = '16px';
+
+		const folderListId = `note-split-folder-list-${Date.now()}`;
+		this.outputFolderInput.setAttribute('list', folderListId);
+		const folderDatalist = outputFolderInputWrap.createEl('datalist', {
+			attr: { id: folderListId },
+		});
+		this.populateFolderDatalist(folderDatalist, this.getAllFoldersInVault());
+
+		this.outputFolderInput.addEventListener('focus', () => {
+			if (this.outputFolderInput) {
+				this.showFolderDropdown(this.outputFolderInput, this.getAllFoldersInVault());
+			}
+		});
+
+		this.outputFolderInput.addEventListener('input', () => {
+			if (this.outputFolderInput) {
+				this.defaultOutputFolder = this.outputFolderInput.value.trim();
+				this.showFolderDropdown(this.outputFolderInput, this.getAllFoldersInVault());
+			}
+		});
 
 		// Default: same folder as source file
 		const defaultFolder = this.file.parent ? this.file.parent.path : '';
-		this.outputFolderInput.value = defaultFolder;
+		this.outputFolderInput.value = this.defaultOutputFolder || defaultFolder;
+		this.defaultOutputFolder = this.outputFolderInput.value.trim();
 
 		const btnRow = contentEl.createDiv({ cls: 'note-split-btn-row' });
 		btnRow.style.display = 'flex';
@@ -167,6 +193,9 @@ class NoteSplitModal extends Modal {
 		list.style.marginBottom = '12px';
 
 		this.checkedParts.clear();
+		this.partFolderInputs.clear();
+		const folderCandidates = this.getAllFoldersInVault();
+		const defaultFolder = this.defaultOutputFolder || (this.file.parent ? this.file.parent.path : '');
 		this.parts.forEach((part, idx) => {
 			this.checkedParts.add(idx);
 			const row = list.createDiv({ cls: 'note-split-preview-item' });
@@ -191,6 +220,39 @@ class NoteSplitModal extends Modal {
 			});
 
 			header.createEl('strong', { text: part.title });
+
+			const folderInputWrap = row.createDiv();
+			folderInputWrap.style.position = 'relative';
+			folderInputWrap.style.marginBottom = '6px';
+
+			folderInputWrap.createEl('small', {
+				text: '保存先フォルダ（空欄=Vault直下）',
+				cls: 'note-split-folder-label',
+			});
+
+			const folderInput = folderInputWrap.createEl('input', {
+				type: 'text',
+				attr: { placeholder: '例: 分割後/ノート' },
+			});
+			folderInput.style.width = '100%';
+			folderInput.value = defaultFolder;
+
+			const folderListId = `note-split-folder-list-preview-${Date.now()}-${idx}`;
+			folderInput.setAttribute('list', folderListId);
+			const folderDatalist = folderInputWrap.createEl('datalist', {
+				attr: { id: folderListId },
+			});
+			this.populateFolderDatalist(folderDatalist, folderCandidates);
+
+			folderInput.addEventListener('focus', () => {
+				this.showFolderDropdown(folderInput, folderCandidates);
+			});
+
+			folderInput.addEventListener('input', () => {
+				this.showFolderDropdown(folderInput, folderCandidates);
+			});
+
+			this.partFolderInputs.set(idx, folderInput);
 
 			const preview = row.createEl('pre');
 			preview.style.fontSize = '11px';
@@ -263,7 +325,6 @@ class NoteSplitModal extends Modal {
 	}
 
 	private async createSelectedNotes() {
-		const folderPath = this.outputFolderInput?.value.trim() ?? '';
 		const selectedParts = this.parts.filter((_, idx) => this.checkedParts.has(idx));
 
 		if (selectedParts.length === 0) {
@@ -275,7 +336,17 @@ class NoteSplitModal extends Modal {
 		this.render();
 
 		try {
-			const result = await this.service.createNotes(selectedParts, folderPath, this.file.basename);
+			const requests: NoteCreateRequest[] = [];
+			this.parts.forEach((part, idx) => {
+				if (!this.checkedParts.has(idx)) {
+					return;
+				}
+
+				const folderPath = this.partFolderInputs.get(idx)?.value.trim() ?? '';
+				requests.push({ part, folderPath });
+			});
+
+			const result = await this.service.createNotes(requests, this.file.basename);
 
 			if (result.skipped.length > 0) {
 				new Notice(`${result.created.length} 件作成、${result.skipped.length} 件スキップ（既存ファイル）`);
@@ -295,5 +366,102 @@ class NoteSplitModal extends Modal {
 		} finally {
 			this.close();
 		}
+	}
+
+	private getAllFoldersInVault(): string[] {
+		return this.app.vault
+			.getAllLoadedFiles()
+			.filter((entry): entry is TFolder => entry instanceof TFolder)
+			.map((folder) => folder.path)
+			.sort((a, b) => a.localeCompare(b, 'ja'));
+	}
+
+	private showFolderDropdown(inputElement: HTMLInputElement, folders: string[]) {
+		const parent = inputElement.parentElement as HTMLElement | null;
+		if (parent && parent.style.position !== 'relative') {
+			parent.style.position = 'relative';
+		}
+
+		let dropdown = inputElement.parentElement?.querySelector('.folder-dropdown') as HTMLElement | null;
+		if (!dropdown) {
+			dropdown = document.createElement('div') as HTMLElement;
+			dropdown.className = 'folder-dropdown';
+			dropdown.style.cssText = `
+				position: absolute;
+				top: 100%;
+				left: 0;
+				right: 0;
+				max-height: 260px;
+				overflow-y: auto;
+				border: 1px solid var(--background-modifier-border);
+				border-radius: 4px;
+				background: var(--background-secondary);
+				z-index: 1000;
+				margin-top: 4px;
+				display: none;
+			`;
+			inputElement.parentElement?.appendChild(dropdown);
+		}
+
+		dropdown.innerHTML = '';
+		const filterValue = inputElement.value.toLowerCase();
+		const filteredFolders = folders.filter((folder) => folder.toLowerCase().includes(filterValue));
+
+		if (filteredFolders.length === 0) {
+			const emptyMsg = dropdown.createDiv();
+			emptyMsg.textContent = 'フォルダが見つかりません';
+			emptyMsg.style.cssText = 'padding: 8px; color: var(--text-muted); text-align: center;';
+			dropdown.style.display = 'block';
+			return;
+		}
+
+		filteredFolders.slice(0, 20).forEach((folder) => {
+			const item = dropdown!.createDiv();
+			item.textContent = folder;
+			item.style.cssText = `
+				padding: 8px 12px;
+				cursor: pointer;
+				border-bottom: 1px solid var(--background-modifier-border);
+				font-size: 0.9em;
+			`;
+
+			item.addEventListener('mouseenter', () => {
+				item.style.backgroundColor = 'var(--background-modifier-hover)';
+			});
+
+			item.addEventListener('mouseleave', () => {
+				item.style.backgroundColor = '';
+			});
+
+			item.addEventListener('click', () => {
+				inputElement.value = folder;
+				dropdown!.style.display = 'none';
+				inputElement.focus();
+			});
+		});
+
+		if (filteredFolders.length > 20) {
+			const moreMsg = dropdown.createDiv();
+			moreMsg.textContent = `他 ${filteredFolders.length - 20} 件...`;
+			moreMsg.style.cssText = 'padding: 8px; color: var(--text-muted); text-align: center; font-size: 0.9em;';
+		}
+
+		dropdown.style.display = 'block';
+
+		if (!inputElement.dataset.noteSplitFolderDropdownBound) {
+			inputElement.dataset.noteSplitFolderDropdownBound = '1';
+			inputElement.addEventListener('blur', () => {
+				setTimeout(() => {
+					dropdown!.style.display = 'none';
+				}, 200);
+			});
+		}
+	}
+
+	private populateFolderDatalist(datalist: HTMLElement, folders: string[]) {
+		datalist.empty();
+		folders.slice(0, 200).forEach((folder) => {
+			datalist.createEl('option', { attr: { value: folder } });
+		});
 	}
 }

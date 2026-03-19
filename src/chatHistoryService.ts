@@ -1,4 +1,4 @@
-import { App, Notice, TFolder, TFile } from 'obsidian';
+import { App, Notice, TFile } from 'obsidian';
 
 export class ChatHistoryService {
 	private app: App;
@@ -28,9 +28,8 @@ export class ChatHistoryService {
 				folder = await this.app.vault.createFolder(folderPath);
 			}
 
-			// Get the first user message as title
-			const firstUserMessage = messageHistory.find(m => m.role === 'user')?.content || 'Chat';
-			const sanitizedTitle = this.sanitizeFileName(firstUserMessage);
+			// Use a short, safe title derived from the first user message.
+			const sanitizedTitle = this.createFileTitleFromHistory(messageHistory);
 
 			// Create filename (with deduplication)
 			const basePath = `${folderPath}/${sanitizedTitle}`.replace(/\/+/g, '/');
@@ -57,19 +56,38 @@ export class ChatHistoryService {
 		}
 	}
 
+	private createFileTitleFromHistory(
+		messageHistory: Array<{ role: string; content: string }>
+	): string {
+		const firstUserMessage = messageHistory.find(m => m.role === 'user')?.content || 'Chat';
+		const firstNonEmptyLine = firstUserMessage
+			.split(/\r?\n/)
+			.map(line => line.trim())
+			.find(line => line.length > 0) || 'Chat';
+
+		return this.sanitizeFileName(firstNonEmptyLine);
+	}
+
 	private sanitizeFileName(text: string): string {
-		// Remove characters not allowed in Obsidian filenames
-		// Disallowed: < > : " / \ | ? *
+		// Remove control chars and characters disallowed in Windows/Obsidian filenames.
+		// Disallowed: control chars, < > : " / \ | ? *
 		let sanitized = text
+			.replace(/[\u0000-\u001F\u007F]/g, '')
 			.replace(/[<>:"/\\|?*]/g, '')
+			.replace(/\s+/g, ' ')
 			.trim();
 
 		// Remove leading and trailing dots and spaces
 		sanitized = sanitized.replace(/^[\s.]+|[\s.]+$/g, '');
 
-		// Limit length to 200 characters (to prevent overly long filenames)
-		if (sanitized.length > 200) {
-			sanitized = sanitized.substring(0, 200);
+		// Avoid Windows reserved filenames.
+		if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(sanitized)) {
+			sanitized = `_${sanitized}`;
+		}
+
+		// Keep filenames short to avoid full-path length limits on Windows.
+		if (sanitized.length > 80) {
+			sanitized = sanitized.substring(0, 80).trim();
 		}
 
 		// If the result is empty, use a default

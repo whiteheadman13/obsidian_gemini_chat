@@ -11,6 +11,11 @@ export interface NoteSplitResult {
 	skipped: string[];
 }
 
+export interface NoteCreateRequest {
+	part: NotePart;
+	folderPath: string;
+}
+
 export class NoteSplitService {
 	private geminiService: GeminiService;
 
@@ -96,18 +101,29 @@ ${content}
 	}
 
 	/**
-	 * NotePart 配列から実際にファイルを作成する
+	 * 分割案ごとに保存先フォルダを指定してファイルを作成する
 	 */
-	async createNotes(parts: NotePart[], folderPath: string, sourceName: string): Promise<NoteSplitResult> {
+	async createNotes(requests: NoteCreateRequest[], sourceName: string): Promise<NoteSplitResult> {
 		const created: TFile[] = [];
 		const skipped: string[] = [];
+		const preparedFolders = new Set<string>();
 
-		// フォルダが存在しない場合は作成
-		if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
-			await this.app.vault.createFolder(folderPath);
+		for (const request of requests) {
+			const normalizedFolderPath = request.folderPath.trim();
+			if (!normalizedFolderPath || preparedFolders.has(normalizedFolderPath)) {
+				continue;
+			}
+
+			if (!this.app.vault.getAbstractFileByPath(normalizedFolderPath)) {
+				await this.app.vault.createFolder(normalizedFolderPath);
+			}
+
+			preparedFolders.add(normalizedFolderPath);
 		}
 
-		for (const part of parts) {
+		for (const request of requests) {
+			const part = request.part;
+			const folderPath = request.folderPath.trim();
 			const safeName = part.title.replace(/[/\\:*?"<>|]/g, '-').trim();
 			const filePath = folderPath
 				? normalizePath(`${folderPath}/${safeName}.md`)

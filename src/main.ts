@@ -9,6 +9,9 @@ import { promptNoteSplit, promptNoteSplitSelection } from './modals/noteSplitMod
 import { createAgent } from './agent/adkAgent';
 import { AgentLogView, AGENT_LOG_VIEW_TYPE } from './agentLogView';
 import { SessionResumeService } from './agent/sessionResumeService';
+import { FolderAccessControl } from './folderAccessControl';
+import { RelatedNotesService } from './relatedNotesService';
+import { RelatedNotesModal } from './modals/relatedNotesModal';
 
 // Remember to rename these classes and interfaces!
 
@@ -113,6 +116,39 @@ export default class MyPlugin extends Plugin {
 					this.settings.geminiModel,
 					this.settings.noteSplitCriteria
 				);
+			}
+		});
+
+		// Add command to suggest related notes for the current note
+		this.addCommand({
+			id: 'find-related-notes',
+			name: '現在ノートの関連ノートを提案',
+			callback: async () => {
+				const activeFile = this.app.workspace.getActiveFile();
+				if (!activeFile) {
+					new Notice('まずノートを開いてください');
+					return;
+				}
+
+				const accessControl = new FolderAccessControl(this.settings);
+				const relatedNotesService = new RelatedNotesService(this.app, accessControl, {
+					limit: this.settings.relatedNotesLimit,
+					titleWeight: this.settings.relatedNotesTitleWeight,
+					textWeight: this.settings.relatedNotesTextWeight,
+					tagWeight: this.settings.relatedNotesTagWeight,
+					linkWeight: this.settings.relatedNotesLinkWeight,
+					excludeFormatterSection: this.settings.relatedNotesExcludeFormatterSection,
+					excludeFrontmatter: this.settings.relatedNotesExcludeFrontmatter,
+					excludeLinked: this.settings.relatedNotesExcludeLinked,
+				});
+				const related = await relatedNotesService.findRelatedNotes(activeFile);
+
+				if (related.length === 0) {
+					new Notice('関連ノートは見つかりませんでした');
+					return;
+				}
+
+				new RelatedNotesModal(this.app, related).open();
 			}
 		});
 

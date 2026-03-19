@@ -86,6 +86,16 @@ npm run build
   ```
 - Reload Obsidian and enable the plugin in **Settings → Community plugins**.
 
+### Agent TDD workflow
+
+- When an agent modifies code, follow TDD by default: Red → Green → Refactor.
+- Start by adding the smallest failing test that expresses the requested behavior change.
+- Confirm the new test fails for the expected reason before changing implementation.
+- Implement only the minimum code needed to make the new test pass.
+- Refactor after tests pass, while keeping the full test suite green.
+- Report test execution results in the final response (at least targeted tests, and full suite when practical).
+- If a test cannot be written first (for example, UI-only or environment limitations), explain why and provide an alternative verification plan before implementation.
+
 ## Commands & settings
 
 - Any user-facing commands should be added via `this.addCommand(...)`.
@@ -137,6 +147,23 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 - Bundle everything into `main.js` (no unbundled runtime deps).
 - Avoid Node/Electron APIs if you want mobile compatibility; set `isDesktopOnly` accordingly.
 - Prefer `async/await` over promise chains; handle errors gracefully.
+
+### Agent method index workflow
+
+- If a target file is long or complex, create a method index before review or implementation.
+- Keep the method index in the same target file (for example, as a dedicated "Method index" section near the top).
+- The method index should list method/function names, signatures, and a one-line responsibility summary.
+- Use the method index as a checklist to verify impact scope and avoid missing side effects.
+- Start detailed code confirmation only after the method index is prepared and referenced.
+- When methods are added, renamed, removed, or responsibilities change during the task, update that in-file method index immediately and keep it in sync before final reporting.
+
+### Repository method catalog workflow
+
+- Maintain `METHOD_INDEX.md` as the repository-wide method catalog.
+- For each method entry in `METHOD_INDEX.md`, include a concise one-line description so readers can quickly understand intent.
+- When an implementation changes behavior or scope, update the corresponding method description in `METHOD_INDEX.md` in the same task.
+- During AI investigations, read relevant sections of `METHOD_INDEX.md` first, then inspect source code to reduce investigation cost.
+- If a description is missing or stale, refresh it before finishing the investigation report.
 
 ## Mobile
 

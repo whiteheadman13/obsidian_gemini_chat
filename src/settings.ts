@@ -5,6 +5,14 @@ export interface MyPluginSettings {
 	geminiApiKey: string;
 	geminiModel: string;
 	chatHistoryFolder: string;
+	relatedNotesLimit: number;
+	relatedNotesTitleWeight: number;
+	relatedNotesTextWeight: number;
+	relatedNotesTagWeight: number;
+	relatedNotesLinkWeight: number;
+	relatedNotesExcludeFormatterSection: boolean;
+	relatedNotesExcludeFrontmatter: boolean;
+	relatedNotesExcludeLinked: boolean;
 	agentAllowedFolders: string[];
 	agentBlockedFolders: string[];
 	agentTemplateFolder: string;
@@ -24,6 +32,14 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	geminiApiKey: '',
 	geminiModel: 'gemini-3.1-flash-lite-preview',
 	chatHistoryFolder: 'Chat History',
+	relatedNotesLimit: 10,
+	relatedNotesTitleWeight: 0.25,
+	relatedNotesTextWeight: 0.4,
+	relatedNotesTagWeight: 0.2,
+	relatedNotesLinkWeight: 0.15,
+	relatedNotesExcludeFormatterSection: true,
+	relatedNotesExcludeFrontmatter: true,
+	relatedNotesExcludeLinked: true,
 	agentAllowedFolders: [],
 	agentBlockedFolders: [],
 	agentTemplateFolder: '',
@@ -77,6 +93,104 @@ export class SampleSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.chatHistoryFolder)
 				.onChange(async (value) => {
 					this.plugin.settings.chatHistoryFolder = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Related note suggestion settings
+		containerEl.createEl('h2', { text: '関連ノート提案' });
+
+		new Setting(containerEl)
+			.setName('提案件数')
+			.setDesc('「現在ノートの関連ノートを提案」で表示する件数（1〜50）')
+			.addText((text) => text
+				.setPlaceholder('10')
+				.setValue(String(this.plugin.settings.relatedNotesLimit))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed)) return;
+					this.plugin.settings.relatedNotesLimit = Math.max(1, Math.min(50, Math.round(parsed)));
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('タイトル類似の重み')
+			.setDesc('0以上の数値。スコア計算時に正規化されます')
+			.addText((text) => text
+				.setPlaceholder('0.25')
+				.setValue(String(this.plugin.settings.relatedNotesTitleWeight))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed) || parsed < 0) return;
+					this.plugin.settings.relatedNotesTitleWeight = parsed;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('本文キーワード類似の重み')
+			.setDesc('0以上の数値。スコア計算時に正規化されます')
+			.addText((text) => text
+				.setPlaceholder('0.4')
+				.setValue(String(this.plugin.settings.relatedNotesTextWeight))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed) || parsed < 0) return;
+					this.plugin.settings.relatedNotesTextWeight = parsed;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('共通タグの重み')
+			.setDesc('0以上の数値。スコア計算時に正規化されます')
+			.addText((text) => text
+				.setPlaceholder('0.2')
+				.setValue(String(this.plugin.settings.relatedNotesTagWeight))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed) || parsed < 0) return;
+					this.plugin.settings.relatedNotesTagWeight = parsed;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('内部リンク関係の重み')
+			.setDesc('0以上の数値。スコア計算時に正規化されます')
+			.addText((text) => text
+				.setPlaceholder('0.15')
+				.setValue(String(this.plugin.settings.relatedNotesLinkWeight))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed) || parsed < 0) return;
+					this.plugin.settings.relatedNotesLinkWeight = parsed;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('formatter部分を除外')
+			.setDesc('本文キーワード類似の計算時に、formatter/フォーマッタ見出し配下や formatter コードブロックを除外します')
+			.addToggle((toggle) => toggle
+				.setValue(this.plugin.settings.relatedNotesExcludeFormatterSection)
+				.onChange(async (value) => {
+					this.plugin.settings.relatedNotesExcludeFormatterSection = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('フロントマターを除外')
+			.setDesc('本文キーワード類似の計算時に、先頭の YAML フロントマター (--- ... ---) を除外します')
+			.addToggle((toggle) => toggle
+				.setValue(this.plugin.settings.relatedNotesExcludeFrontmatter)
+				.onChange(async (value) => {
+					this.plugin.settings.relatedNotesExcludeFrontmatter = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('既にリンクしているノートを除外')
+			.setDesc('内部リンクで既につながっているノートを候補から除外し、予想外のつながりを発見しやすくします')
+			.addToggle((toggle) => toggle
+				.setValue(this.plugin.settings.relatedNotesExcludeLinked)
+				.onChange(async (value) => {
+					this.plugin.settings.relatedNotesExcludeLinked = value;
 					await this.plugin.saveSettings();
 				}));
 

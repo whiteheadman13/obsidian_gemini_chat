@@ -40,24 +40,33 @@ export class ChatReferenceService {
 		// @参照の正規表現: @(outNoteFormat|instruction|reference|outFolder|file):filepath
 		const atRefPattern = /@(outNoteFormat|instruction|reference|outFolder|file):([^\s]+)/g;
 		const references: ParsedAtReference[] = [];
-		let match;
+		let referenceCount = 0;
 
-		while ((match = atRefPattern.exec(text)) !== null) {
-			references.push({
-				type: match[1] as 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder' | 'file',
-				filePath: match[2] || '',
-				isValid: false, // 後で検証
-			});
-		}
-
-		// クリーンアップ:
-		// - @file: → ファイル名（basename）に置換（どのファイルに言及しているか文脈を保持）
-		// - その他の @参照 → 削除（ユーザーには見えない制御用参照）
+		// 1パスで参照抽出と本文置換を行う
 		const cleanedText = text
-			.replace(/@file:([^\s]+)/g, (_match, filePath: string) => {
-				return filePath.split('/').pop() || filePath;
+			.replace(atRefPattern, (_full, typeRaw: string, filePathRaw: string) => {
+				const type = typeRaw as 'outNoteFormat' | 'instruction' | 'reference' | 'outFolder' | 'file';
+				const filePath = filePathRaw || '';
+
+				references.push({
+					type,
+					filePath,
+					isValid: false, // 後で検証
+				});
+
+				if (type === 'file') {
+					// どのファイルに言及しているか文脈を保持
+					return filePath.split('/').pop() || filePath;
+				}
+
+				if (type === 'reference') {
+					referenceCount += 1;
+					return `参考資料${referenceCount}`;
+				}
+
+				// 制御用参照は本文から除去
+				return '';
 			})
-			.replace(/@(outNoteFormat|instruction|reference|outFolder):[^\s]+/g, '')
 			.trim();
 
 		return { references, cleanedText };
