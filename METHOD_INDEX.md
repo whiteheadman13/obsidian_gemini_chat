@@ -277,6 +277,8 @@
 - method: GeminiService.chat(messages: Array<{ role: string; content: string }>, inlineImages?: Array<{ mimeType: string; data: string }>, useGoogleSearch?: boolean): Promise<string> => Sends chat inputs to Gemini and returns the response.
 - method: GeminiService.chatWithMetadata(messages: Array<{ role: string; content: string }>, inlineImages?: Array<{ mimeType: string; data: string }>, useGoogleSearch?: boolean): Promise<{ text: string; references: string[] }> => Sends chat inputs to Gemini and returns the response.
 - method: GeminiService.chatWithTools(messages: Array<{ role: string; content: string }>, functionDeclarations: GeminiFunctionDeclaration[], toolExecutor: ToolExecutor, maxIterations: number = 5): Promise<{ text: string; references: string[]; toolCalls: Array<{ name: string; args: any; result: any }> }> => Sends chat inputs to Gemini and returns the response.
+- method: GeminiService.embedText(text: string, embeddingModel: string = 'text-embedding-004'): Promise<number[]> => Requests a single embedding vector from Gemini Embedding API.
+- method: GeminiService.embedTexts(texts: string[], embeddingModel: string = 'text-embedding-004'): Promise<number[][]> => Generates embeddings for multiple texts sequentially.
 - method: GeminiService.generateTitle(prompt: string): Promise<string> => Generates a computed result from the given inputs.
 
 ## src/main.ts

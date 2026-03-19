@@ -231,6 +231,51 @@ export class GeminiService {
 	}
 
 	/**
+	 * Gemini Embedding APIでテキストを1件ベクトル化する
+	 */
+	async embedText(text: string, embeddingModel: string = 'text-embedding-004'): Promise<number[]> {
+		if (!this.apiKey) {
+			throw new Error('Gemini API key is not set');
+		}
+
+		const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:embedContent?key=` + this.apiKey, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				content: {
+					parts: [{ text }],
+				},
+			}),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Gemini Embedding API error: ${response.status} - ${errorText}`);
+		}
+
+		const data = await response.json();
+		const values = data.embedding?.values;
+		if (!Array.isArray(values) || values.length === 0) {
+			throw new Error('Gemini Embedding API returned empty embedding values');
+		}
+
+		return values;
+	}
+
+	/**
+	 * Gemini Embedding APIでテキスト配列を順次ベクトル化する
+	 */
+	async embedTexts(texts: string[], embeddingModel: string = 'text-embedding-004'): Promise<number[][]> {
+		const vectors: number[][] = [];
+		for (const text of texts) {
+			vectors.push(await this.embedText(text, embeddingModel));
+		}
+		return vectors;
+	}
+
+	/**
 	 * AIに短いタイトルを提案させる
 	 */
 	async generateTitle(prompt: string): Promise<string> {
