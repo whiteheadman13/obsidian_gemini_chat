@@ -14,7 +14,7 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 		relatedNotesTagWeight: 0.2,
 		relatedNotesLinkWeight: 0.15,
 		relatedNotesVectorFolders: [],
-		relatedNotesEmbeddingModel: 'text-embedding-004',
+		relatedNotesEmbeddingModel: 'gemini-embedding-001',
 		relatedNotesHybridLexicalWeight: 0.4,
 		relatedNotesHybridVectorWeight: 0.6,
 		relatedNotesVectorTopK: 20,

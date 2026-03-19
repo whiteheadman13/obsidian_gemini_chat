@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	relatedNotesTagWeight: 0.2,
 	relatedNotesLinkWeight: 0.15,
 	relatedNotesVectorFolders: [],
-	relatedNotesEmbeddingModel: 'text-embedding-004',
+	relatedNotesEmbeddingModel: 'gemini-embedding-001',
 	relatedNotesHybridLexicalWeight: 0.4,
 	relatedNotesHybridVectorWeight: 0.6,
 	relatedNotesVectorTopK: 20,
@@ -238,10 +238,10 @@ export class SampleSettingTab extends PluginSettingTab {
 			.setName('Embeddingモデル')
 			.setDesc('ベクトル化に利用するGemini Embeddingモデル名を指定します')
 			.addText((text) => text
-				.setPlaceholder('text-embedding-004')
+				.setPlaceholder('gemini-embedding-001')
 				.setValue(this.plugin.settings.relatedNotesEmbeddingModel)
 				.onChange(async (value) => {
-					this.plugin.settings.relatedNotesEmbeddingModel = value.trim() || 'text-embedding-004';
+					this.plugin.settings.relatedNotesEmbeddingModel = value.trim() || 'gemini-embedding-001';
 					await this.plugin.saveSettings();
 				}));
 
