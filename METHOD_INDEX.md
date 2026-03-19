@@ -261,7 +261,7 @@
 
 ## src/folderAccessControl.test.ts
 
-- function: createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSettings => Creates and returns a new resource.
+- function: createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSettings => Builds test settings with default related-note and access-control values.
 
 ## src/folderAccessControl.ts
 
@@ -386,7 +386,7 @@
 
 ## src/settings.ts
 
-- method: SampleSettingTab.display(): void => Handles display logic for this module.
+- method: SampleSettingTab.display(): void => Renders plugin settings including related-note lexical/vector/hybrid options.
 - method: SampleSettingTab.displayFolderList(containerEl: HTMLElement, folders: string[], onChange: (folders: string[]) => void, label: string) | Handles display folder list logic for this module.
 - method: SampleSettingTab.updateFolderSuggestions(inputElement: HTMLInputElement, container: HTMLElement) => Updates internal state and persists related changes when needed.
 - method: SampleSettingTab.getAllFoldersInVault(): string[] => Returns all folders in vault.

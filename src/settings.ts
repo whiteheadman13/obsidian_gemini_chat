@@ -5,11 +5,17 @@ export interface MyPluginSettings {
 	geminiApiKey: string;
 	geminiModel: string;
 	chatHistoryFolder: string;
+	relatedNotesMode: 'lexical' | 'vector' | 'hybrid';
 	relatedNotesLimit: number;
 	relatedNotesTitleWeight: number;
 	relatedNotesTextWeight: number;
 	relatedNotesTagWeight: number;
 	relatedNotesLinkWeight: number;
+	relatedNotesVectorFolder: string;
+	relatedNotesEmbeddingModel: string;
+	relatedNotesHybridLexicalWeight: number;
+	relatedNotesHybridVectorWeight: number;
+	relatedNotesVectorTopK: number;
 	relatedNotesExcludeFormatterSection: boolean;
 	relatedNotesExcludeFrontmatter: boolean;
 	relatedNotesExcludeLinked: boolean;
@@ -32,11 +38,17 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	geminiApiKey: '',
 	geminiModel: 'gemini-3.1-flash-lite-preview',
 	chatHistoryFolder: 'Chat History',
+	relatedNotesMode: 'lexical',
 	relatedNotesLimit: 10,
 	relatedNotesTitleWeight: 0.25,
 	relatedNotesTextWeight: 0.4,
 	relatedNotesTagWeight: 0.2,
 	relatedNotesLinkWeight: 0.15,
+	relatedNotesVectorFolder: '',
+	relatedNotesEmbeddingModel: 'text-embedding-004',
+	relatedNotesHybridLexicalWeight: 0.4,
+	relatedNotesHybridVectorWeight: 0.6,
+	relatedNotesVectorTopK: 20,
 	relatedNotesExcludeFormatterSection: true,
 	relatedNotesExcludeFrontmatter: true,
 	relatedNotesExcludeLinked: true,
@@ -98,6 +110,19 @@ export class SampleSettingTab extends PluginSettingTab {
 
 		// Related note suggestion settings
 		containerEl.createEl('h2', { text: '関連ノート提案' });
+
+		new Setting(containerEl)
+			.setName('提案方式')
+			.setDesc('語彙ベース、ベクトルベース、ハイブリッドのいずれかを選択します')
+			.addDropdown((dropdown) => dropdown
+				.addOption('lexical', '語彙ベース（既存）')
+				.addOption('vector', 'ベクトルベース')
+				.addOption('hybrid', 'ハイブリッド')
+				.setValue(this.plugin.settings.relatedNotesMode)
+				.onChange(async (value: 'lexical' | 'vector' | 'hybrid') => {
+					this.plugin.settings.relatedNotesMode = value;
+					await this.plugin.saveSettings();
+				}));
 
 		new Setting(containerEl)
 			.setName('提案件数')
@@ -191,6 +216,67 @@ export class SampleSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.relatedNotesExcludeLinked)
 				.onChange(async (value) => {
 					this.plugin.settings.relatedNotesExcludeLinked = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('ベクトル対象フォルダ')
+			.setDesc('ベクトルインデックスの対象フォルダ。空欄の場合はVault全体を対象にします')
+			.addText((text) => text
+				.setPlaceholder('例: Projects')
+				.setValue(this.plugin.settings.relatedNotesVectorFolder)
+				.onChange(async (value) => {
+					this.plugin.settings.relatedNotesVectorFolder = value.trim();
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Embeddingモデル')
+			.setDesc('ベクトル化に利用するGemini Embeddingモデル名を指定します')
+			.addText((text) => text
+				.setPlaceholder('text-embedding-004')
+				.setValue(this.plugin.settings.relatedNotesEmbeddingModel)
+				.onChange(async (value) => {
+					this.plugin.settings.relatedNotesEmbeddingModel = value.trim() || 'text-embedding-004';
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('ベクトル候補数')
+			.setDesc('ベクトル類似度で返す候補上限（1〜200）')
+			.addText((text) => text
+				.setPlaceholder('20')
+				.setValue(String(this.plugin.settings.relatedNotesVectorTopK))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed)) return;
+					this.plugin.settings.relatedNotesVectorTopK = Math.max(1, Math.min(200, Math.round(parsed)));
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('ハイブリッド:語彙スコア重み')
+			.setDesc('0以上の数値。ハイブリッド時に使用します（内部で正規化）')
+			.addText((text) => text
+				.setPlaceholder('0.4')
+				.setValue(String(this.plugin.settings.relatedNotesHybridLexicalWeight))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed) || parsed < 0) return;
+					this.plugin.settings.relatedNotesHybridLexicalWeight = parsed;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('ハイブリッド:ベクトル重み')
+			.setDesc('0以上の数値。ハイブリッド時に使用します（内部で正規化）')
+			.addText((text) => text
+				.setPlaceholder('0.6')
+				.setValue(String(this.plugin.settings.relatedNotesHybridVectorWeight))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed) || parsed < 0) return;
+					this.plugin.settings.relatedNotesHybridVectorWeight = parsed;
 					await this.plugin.saveSettings();
 				}));
 
