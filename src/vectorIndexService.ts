@@ -1,0 +1,258 @@
+import { App, TFile } from 'obsidian';
+import { FolderAccessControl } from './folderAccessControl';
+import { GeminiService } from './geminiService';
+
+interface VectorIndexEntry {
+	path: string;
+	fingerprint: string;
+	vector: number[];
+	updatedAt: number;
+}
+
+interface VectorIndexData {
+	model: string;
+	folder: string;
+	entries: Record<string, VectorIndexEntry>;
+}
+
+interface VectorIndexStore {
+	version: 1;
+	indexes: Record<string, VectorIndexData>;
+}
+
+export interface VectorIndexBuildResult {
+	totalInScope: number;
+	indexed: number;
+	updated: number;
+	removed: number;
+	skipped: number;
+}
+
+export interface VectorSearchResult {
+	file: TFile;
+	score: number;
+}
+
+export class VectorIndexService {
+	private app: App;
+	private accessControl: FolderAccessControl;
+	private geminiService: GeminiService;
+	private embeddingModel: string;
+	private targetFolder: string;
+	private pluginId: string;
+
+	constructor(
+		app: App,
+		accessControl: FolderAccessControl,
+		geminiService: GeminiService,
+		pluginId: string,
+		embeddingModel: string,
+		targetFolder: string
+	) {
+		this.app = app;
+		this.accessControl = accessControl;
+		this.geminiService = geminiService;
+		this.pluginId = pluginId;
+		this.embeddingModel = embeddingModel || 'text-embedding-004';
+		this.targetFolder = this.normalizeFolder(targetFolder);
+	}
+
+	async buildOrUpdateIndex(): Promise<VectorIndexBuildResult> {
+		const store = await this.loadStore();
+		const key = this.getIndexKey();
+		const current = store.indexes[key] ?? {
+			model: this.embeddingModel,
+			folder: this.targetFolder,
+			entries: {},
+		};
+
+		const files = this.getScopedFiles();
+		const inScopePaths = new Set(files.map((f) => f.path));
+		let indexed = 0;
+		let updated = 0;
+		let skipped = 0;
+
+		for (const file of files) {
+			const fingerprint = this.buildFingerprint(file);
+			const previous = current.entries[file.path];
+			if (previous && previous.fingerprint === fingerprint) {
+				skipped += 1;
+				continue;
+			}
+
+			const embeddingText = await this.buildEmbeddingText(file);
+			const vector = await this.geminiService.embedText(embeddingText, this.embeddingModel);
+			current.entries[file.path] = {
+				path: file.path,
+				fingerprint,
+				vector,
+				updatedAt: Date.now(),
+			};
+
+			if (previous) {
+				updated += 1;
+			} else {
+				indexed += 1;
+			}
+		}
+
+		let removed = 0;
+		for (const path of Object.keys(current.entries)) {
+			if (!inScopePaths.has(path)) {
+				delete current.entries[path];
+				removed += 1;
+			}
+		}
+
+		store.indexes[key] = current;
+		await this.saveStore(store);
+
+		return {
+			totalInScope: files.length,
+			indexed,
+			updated,
+			removed,
+			skipped,
+		};
+	}
+
+	async findSimilarNotes(activeFile: TFile, limit: number): Promise<VectorSearchResult[]> {
+		const store = await this.loadStore();
+		const key = this.getIndexKey();
+		const current = store.indexes[key];
+		if (!current) {
+			return [];
+		}
+
+		const embeddingText = await this.buildEmbeddingText(activeFile);
+		const activeVector = await this.geminiService.embedText(embeddingText, this.embeddingModel);
+		const filesByPath = new Map(this.app.vault.getMarkdownFiles().map((f) => [f.path, f]));
+
+		const rows: VectorSearchResult[] = [];
+		for (const entry of Object.values(current.entries)) {
+			if (entry.path === activeFile.path) {
+				continue;
+			}
+
+			const file = filesByPath.get(entry.path);
+			if (!file) {
+				continue;
+			}
+			if (!this.accessControl.isFileAccessAllowed(file) || !this.isInTargetFolder(file.path)) {
+				continue;
+			}
+
+			const score = this.cosineSimilarity(activeVector, entry.vector);
+			if (score > 0) {
+				rows.push({ file, score });
+			}
+		}
+
+		return rows
+			.sort((a, b) => b.score - a.score)
+			.slice(0, Math.max(1, Math.min(200, Math.floor(limit))));
+	}
+
+	private getScopedFiles(): TFile[] {
+		return this.accessControl
+			.filterAllowedFiles(this.app.vault.getMarkdownFiles())
+			.filter((f) => this.isInTargetFolder(f.path));
+	}
+
+	private isInTargetFolder(path: string): boolean {
+		if (!this.targetFolder) {
+			return true;
+		}
+		return path === this.targetFolder || path.startsWith(`${this.targetFolder}/`);
+	}
+
+	private buildFingerprint(file: TFile): string {
+		const mtime = file.stat?.mtime ?? 0;
+		const size = file.stat?.size ?? 0;
+		return `${file.path}::${mtime}::${size}::${this.embeddingModel}`;
+	}
+
+	private async buildEmbeddingText(file: TFile): Promise<string> {
+		const content = await this.app.vault.read(file);
+		const cleaned = content
+			.replace(/^---\s*\n[\s\S]*?\n---\s*(?:\n|$)/, ' ')
+			.replace(/```[\s\S]*?```/g, ' ')
+			.replace(/\[\[([^\]]+)\]\]/g, ' $1 ')
+			.replace(/https?:\/\/\S+/g, ' ')
+			.replace(/[\r\n\t]+/g, ' ')
+			.trim();
+
+		const maxLength = 8000;
+		const excerpt = cleaned.slice(0, maxLength);
+		return `${file.basename}\n\n${excerpt}`;
+	}
+
+	private cosineSimilarity(a: number[], b: number[]): number {
+		if (a.length === 0 || b.length === 0 || a.length !== b.length) {
+			return 0;
+		}
+
+		let dot = 0;
+		let normA = 0;
+		let normB = 0;
+		for (let i = 0; i < a.length; i++) {
+			const av = a[i] ?? 0;
+			const bv = b[i] ?? 0;
+			dot += av * bv;
+			normA += av * av;
+			normB += bv * bv;
+		}
+
+		if (normA === 0 || normB === 0) {
+			return 0;
+		}
+
+		return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+	}
+
+	private getIndexKey(): string {
+		const folderKey = this.targetFolder || '/';
+		return `${this.embeddingModel}::${folderKey}`;
+	}
+
+	private normalizeFolder(folder: string): string {
+		return folder.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+	}
+
+	private getIndexFilePath(): string {
+		const configDir = (this.app.vault as unknown as { configDir?: string }).configDir ?? '.obsidian';
+		return `${configDir}/plugins/${this.pluginId}/related-notes-vector-index.json`;
+	}
+
+	private async loadStore(): Promise<VectorIndexStore> {
+		const path = this.getIndexFilePath();
+		const adapter = this.app.vault.adapter;
+
+		if (!(await adapter.exists(path))) {
+			return { version: 1, indexes: {} };
+		}
+
+		try {
+			const raw = await adapter.read(path);
+			const parsed = JSON.parse(raw) as Partial<VectorIndexStore>;
+			if (parsed.version !== 1 || !parsed.indexes || typeof parsed.indexes !== 'object') {
+				return { version: 1, indexes: {} };
+			}
+			return { version: 1, indexes: parsed.indexes };
+		} catch {
+			return { version: 1, indexes: {} };
+		}
+	}
+
+	private async saveStore(store: VectorIndexStore): Promise<void> {
+		const path = this.getIndexFilePath();
+		const adapter = this.app.vault.adapter;
+		const folder = path.split('/').slice(0, -1).join('/');
+
+		if (!(await adapter.exists(folder))) {
+			await adapter.mkdir(folder);
+		}
+
+		await adapter.write(path, JSON.stringify(store));
+	}
+}

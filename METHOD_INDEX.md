@@ -397,6 +397,21 @@
 - method: SampleSettingTab.showFolderDropdown(inputElement: HTMLInputElement, folders: string[]) => Displays a UI prompt or interactive element.
 - function: updateList() => Updates internal state and persists related changes when needed.
 
+## src/vectorIndexService.ts
+
+- method: VectorIndexService.buildOrUpdateIndex(): Promise<VectorIndexBuildResult> => Builds or updates vector index entries using fingerprint-based incremental processing.
+- method: VectorIndexService.findSimilarNotes(activeFile: TFile, limit: number): Promise<VectorSearchResult[]> => Computes local cosine similarity against indexed vectors and returns top matches.
+- method: VectorIndexService.getScopedFiles(): TFile[] => Returns markdown files in scope after folder and access-control filtering.
+- method: VectorIndexService.isInTargetFolder(path: string): boolean => Checks whether a path belongs to the configured target folder scope.
+- method: VectorIndexService.buildFingerprint(file: TFile): string => Creates a deterministic fingerprint from file metadata and embedding model.
+- method: VectorIndexService.buildEmbeddingText(file: TFile): Promise<string> => Generates cleaned embedding input text from markdown content.
+- method: VectorIndexService.cosineSimilarity(a: number[], b: number[]): number => Calculates cosine similarity between two vectors.
+- method: VectorIndexService.getIndexKey(): string => Builds a storage key per embedding model and target folder.
+- method: VectorIndexService.normalizeFolder(folder: string): string => Normalizes folder path boundaries for matching and keys.
+- method: VectorIndexService.getIndexFilePath(): string => Returns plugin-local JSON path for persisting vector indexes.
+- method: VectorIndexService.loadStore(): Promise<VectorIndexStore> => Loads and validates persisted vector index store.
+- method: VectorIndexService.saveStore(store: VectorIndexStore): Promise<void> => Persists vector index store JSON to plugin-local storage.
+
 ## src/test/mocks/obsidian.ts
 
 - (no function or method declarations found)
