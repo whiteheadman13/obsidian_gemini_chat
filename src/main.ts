@@ -10,8 +10,10 @@ import { createAgent } from './agent/adkAgent';
 import { AgentLogView, AGENT_LOG_VIEW_TYPE } from './agentLogView';
 import { SessionResumeService } from './agent/sessionResumeService';
 import { FolderAccessControl } from './folderAccessControl';
-import { RelatedNotesService } from './relatedNotesService';
+import { GeminiService } from './geminiService';
+import { RelatedNotesService, type RelatedNoteCandidate } from './relatedNotesService';
 import { RelatedNotesModal } from './modals/relatedNotesModal';
+import { VectorIndexService, type VectorSearchResult } from './vectorIndexService';
 
 // Remember to rename these classes and interfaces!
 
@@ -141,7 +143,29 @@ export default class MyPlugin extends Plugin {
 					excludeFrontmatter: this.settings.relatedNotesExcludeFrontmatter,
 					excludeLinked: this.settings.relatedNotesExcludeLinked,
 				});
-				const related = await relatedNotesService.findRelatedNotes(activeFile);
+
+				let related: RelatedNoteCandidate[] = [];
+				const mode = this.settings.relatedNotesMode;
+
+				if (mode === 'lexical') {
+					related = await relatedNotesService.findRelatedNotes(activeFile);
+				} else {
+					const vectorService = this.createVectorIndexService(accessControl);
+					if (!vectorService) {
+						if (mode === 'vector') {
+							new Notice('ベクトル提案にはGemini APIキーが必要です');
+							return;
+						}
+						related = await relatedNotesService.findRelatedNotes(activeFile);
+					} else if (mode === 'vector') {
+						const vectorRows = await vectorService.findSimilarNotes(activeFile, this.settings.relatedNotesVectorTopK);
+						related = this.convertVectorResults(vectorRows);
+					} else {
+						const lexical = await relatedNotesService.findRelatedNotes(activeFile, this.settings.relatedNotesVectorTopK);
+						const vectorRows = await vectorService.findSimilarNotes(activeFile, this.settings.relatedNotesVectorTopK);
+						related = this.mergeHybridResults(lexical, vectorRows);
+					}
+				}
 
 				if (related.length === 0) {
 					new Notice('関連ノートは見つかりませんでした');
@@ -150,6 +174,26 @@ export default class MyPlugin extends Plugin {
 
 				new RelatedNotesModal(this.app, related).open();
 			}
+		});
+
+		// Add command to build/update related-note vector index incrementally
+		this.addCommand({
+			id: 'update-related-notes-vector-index',
+			name: '関連ノートのベクトルインデックスを更新',
+			callback: async () => {
+				const accessControl = new FolderAccessControl(this.settings);
+				const vectorService = this.createVectorIndexService(accessControl);
+				if (!vectorService) {
+					new Notice('ベクトルインデックス更新にはGemini APIキーが必要です');
+					return;
+				}
+
+				new Notice('ベクトルインデックスを更新しています...');
+				const result = await vectorService.buildOrUpdateIndex();
+				new Notice(
+					`ベクトル更新完了: 新規 ${result.indexed} / 更新 ${result.updated} / 削除 ${result.removed} / スキップ ${result.skipped}`
+				);
+			},
 		});
 
 		// Add command to start the simple autonomous agent
@@ -292,5 +336,66 @@ export default class MyPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	private createVectorIndexService(accessControl: FolderAccessControl): VectorIndexService | null {
+		if (!this.settings.geminiApiKey) {
+			return null;
+		}
+
+		const geminiService = new GeminiService(this.settings.geminiApiKey, this.settings.geminiModel);
+		return new VectorIndexService(
+			this.app,
+			accessControl,
+			geminiService,
+			this.manifest.id,
+			this.settings.relatedNotesEmbeddingModel,
+			this.settings.relatedNotesVectorFolder
+		);
+	}
+
+	private convertVectorResults(rows: VectorSearchResult[]): RelatedNoteCandidate[] {
+		return rows.map((row) => ({
+			file: row.file,
+			score: row.score,
+			reasons: [`ベクトル類似度: ${row.score.toFixed(3)}`],
+		}));
+	}
+
+	private mergeHybridResults(lexical: RelatedNoteCandidate[], vectorRows: VectorSearchResult[]): RelatedNoteCandidate[] {
+		const weighted = new Map<string, RelatedNoteCandidate>();
+		const lexicalWeight = Math.max(0, this.settings.relatedNotesHybridLexicalWeight);
+		const vectorWeight = Math.max(0, this.settings.relatedNotesHybridVectorWeight);
+		const sum = lexicalWeight + vectorWeight;
+		const normalizedLexicalWeight = sum > 0 ? lexicalWeight / sum : 0.4;
+		const normalizedVectorWeight = sum > 0 ? vectorWeight / sum : 0.6;
+
+		for (const candidate of lexical) {
+			weighted.set(candidate.file.path, {
+				file: candidate.file,
+				score: candidate.score * normalizedLexicalWeight,
+				reasons: [...candidate.reasons],
+			});
+		}
+
+		for (const vector of vectorRows) {
+			const current = weighted.get(vector.file.path);
+			const vectorScore = vector.score * normalizedVectorWeight;
+			if (current) {
+				current.score += vectorScore;
+				current.reasons = [...current.reasons, `ベクトル類似度: ${vector.score.toFixed(3)}`];
+			} else {
+				weighted.set(vector.file.path, {
+					file: vector.file,
+					score: vectorScore,
+					reasons: [`ベクトル類似度: ${vector.score.toFixed(3)}`],
+				});
+			}
+		}
+
+		return Array.from(weighted.values())
+			.filter((candidate) => candidate.score > 0)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, Math.max(1, Math.min(50, this.settings.relatedNotesLimit)));
 	}
 }

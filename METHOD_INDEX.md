@@ -283,12 +283,15 @@
 
 ## src/main.ts
 
-- method: MyPlugin.onload() => Handles onload logic for this module.
+- method: MyPlugin.onload() => Registers commands including lexical/vector/hybrid related-note workflows.
 - method: MyPlugin.onunload() => Handles onunload logic for this module.
 - method: MyPlugin.activateView() => Handles activate view logic for this module.
 - method: MyPlugin.activateAgentLogView(): Promise<AgentLogView | null> => Handles activate agent log view logic for this module.
 - method: MyPlugin.loadSettings() => Loads data from storage and prepares it for use.
 - method: MyPlugin.saveSettings() => Saves the current data to storage.
+- method: MyPlugin.createVectorIndexService(accessControl: FolderAccessControl): VectorIndexService | null => Creates a vector index service when API key and settings are available.
+- method: MyPlugin.convertVectorResults(rows: VectorSearchResult[]): RelatedNoteCandidate[] => Converts vector similarity rows into modal-ready related note candidates.
+- method: MyPlugin.mergeHybridResults(lexical: RelatedNoteCandidate[], vectorRows: VectorSearchResult[]): RelatedNoteCandidate[] => Merges lexical and vector scores using normalized hybrid weights.
 
 ## src/modals/agentConfirmModal.ts
 
