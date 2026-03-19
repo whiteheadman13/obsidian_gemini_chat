@@ -13,7 +13,7 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 		relatedNotesTextWeight: 0.4,
 		relatedNotesTagWeight: 0.2,
 		relatedNotesLinkWeight: 0.15,
-		relatedNotesVectorFolder: '',
+		relatedNotesVectorFolders: [],
 		relatedNotesEmbeddingModel: 'text-embedding-004',
 		relatedNotesHybridLexicalWeight: 0.4,
 		relatedNotesHybridVectorWeight: 0.6,

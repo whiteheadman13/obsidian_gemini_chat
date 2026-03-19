@@ -287,9 +287,9 @@
 - method: MyPlugin.onunload() => Handles onunload logic for this module.
 - method: MyPlugin.activateView() => Handles activate view logic for this module.
 - method: MyPlugin.activateAgentLogView(): Promise<AgentLogView | null> => Handles activate agent log view logic for this module.
-- method: MyPlugin.loadSettings() => Loads data from storage and prepares it for use.
+- method: MyPlugin.loadSettings() => Loads settings and migrates legacy single vector folder into multi-folder config.
 - method: MyPlugin.saveSettings() => Saves the current data to storage.
-- method: MyPlugin.createVectorIndexService(accessControl: FolderAccessControl): VectorIndexService | null => Creates a vector index service when API key and settings are available.
+- method: MyPlugin.createVectorIndexService(accessControl: FolderAccessControl): VectorIndexService | null => Creates a vector index service using embedding settings and multiple target folders.
 - method: MyPlugin.convertVectorResults(rows: VectorSearchResult[]): RelatedNoteCandidate[] => Converts vector similarity rows into modal-ready related note candidates.
 - method: MyPlugin.mergeHybridResults(lexical: RelatedNoteCandidate[], vectorRows: VectorSearchResult[]): RelatedNoteCandidate[] => Merges lexical and vector scores using normalized hybrid weights.
 
@@ -404,13 +404,13 @@
 
 - method: VectorIndexService.buildOrUpdateIndex(): Promise<VectorIndexBuildResult> => Builds or updates vector index entries using fingerprint-based incremental processing.
 - method: VectorIndexService.findSimilarNotes(activeFile: TFile, limit: number): Promise<VectorSearchResult[]> => Computes local cosine similarity against indexed vectors and returns top matches.
-- method: VectorIndexService.getScopedFiles(): TFile[] => Returns markdown files in scope after folder and access-control filtering.
-- method: VectorIndexService.isInTargetFolder(path: string): boolean => Checks whether a path belongs to the configured target folder scope.
+- method: VectorIndexService.getScopedFiles(): TFile[] => Returns markdown files in scope after multi-folder and access-control filtering.
+- method: VectorIndexService.isInTargetFolders(path: string): boolean => Checks whether a path belongs to any configured target folder scope.
 - method: VectorIndexService.buildFingerprint(file: TFile): string => Creates a deterministic fingerprint from file metadata and embedding model.
 - method: VectorIndexService.buildEmbeddingText(file: TFile): Promise<string> => Generates cleaned embedding input text from markdown content.
 - method: VectorIndexService.cosineSimilarity(a: number[], b: number[]): number => Calculates cosine similarity between two vectors.
 - method: VectorIndexService.getIndexKey(): string => Builds a storage key per embedding model and target folder.
-- method: VectorIndexService.normalizeFolder(folder: string): string => Normalizes folder path boundaries for matching and keys.
+- method: VectorIndexService.normalizeFolders(folders: string[]): string[] => Normalizes, deduplicates, and sorts folder path boundaries for matching and keys.
 - method: VectorIndexService.getIndexFilePath(): string => Returns plugin-local JSON path for persisting vector indexes.
 - method: VectorIndexService.loadStore(): Promise<VectorIndexStore> => Loads and validates persisted vector index store.
 - method: VectorIndexService.saveStore(store: VectorIndexStore): Promise<void> => Persists vector index store JSON to plugin-local storage.

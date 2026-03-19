@@ -11,7 +11,7 @@ export interface MyPluginSettings {
 	relatedNotesTextWeight: number;
 	relatedNotesTagWeight: number;
 	relatedNotesLinkWeight: number;
-	relatedNotesVectorFolder: string;
+	relatedNotesVectorFolders: string[];
 	relatedNotesEmbeddingModel: string;
 	relatedNotesHybridLexicalWeight: number;
 	relatedNotesHybridVectorWeight: number;
@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	relatedNotesTextWeight: 0.4,
 	relatedNotesTagWeight: 0.2,
 	relatedNotesLinkWeight: 0.15,
-	relatedNotesVectorFolder: '',
+	relatedNotesVectorFolders: [],
 	relatedNotesEmbeddingModel: 'text-embedding-004',
 	relatedNotesHybridLexicalWeight: 0.4,
 	relatedNotesHybridVectorWeight: 0.6,
@@ -221,14 +221,18 @@ export class SampleSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('ベクトル対象フォルダ')
-			.setDesc('ベクトルインデックスの対象フォルダ。空欄の場合はVault全体を対象にします')
-			.addText((text) => text
-				.setPlaceholder('例: Projects')
-				.setValue(this.plugin.settings.relatedNotesVectorFolder)
-				.onChange(async (value) => {
-					this.plugin.settings.relatedNotesVectorFolder = value.trim();
-					await this.plugin.saveSettings();
-				}));
+			.setDesc('ベクトルインデックス対象のフォルダ。空の場合はVault全体を対象にします')
+			.setHeading();
+
+		this.displayFolderList(
+			containerEl,
+			this.plugin.settings.relatedNotesVectorFolders,
+			(folders) => {
+				this.plugin.settings.relatedNotesVectorFolders = folders;
+				this.plugin.saveSettings();
+			},
+			'ベクトル対象フォルダ'
+		);
 
 		new Setting(containerEl)
 			.setName('Embeddingモデル')

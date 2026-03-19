@@ -331,7 +331,19 @@ export default class MyPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		const loaded = await this.loadData() as Partial<MyPluginSettings> & { relatedNotesVectorFolder?: string };
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+
+		if (!Array.isArray(this.settings.relatedNotesVectorFolders)) {
+			this.settings.relatedNotesVectorFolders = [];
+		}
+
+		const legacyFolder = typeof loaded.relatedNotesVectorFolder === 'string'
+			? loaded.relatedNotesVectorFolder.trim()
+			: '';
+		if (legacyFolder && !this.settings.relatedNotesVectorFolders.includes(legacyFolder)) {
+			this.settings.relatedNotesVectorFolders.push(legacyFolder);
+		}
 	}
 
 	async saveSettings() {
@@ -350,7 +362,7 @@ export default class MyPlugin extends Plugin {
 			geminiService,
 			this.manifest.id,
 			this.settings.relatedNotesEmbeddingModel,
-			this.settings.relatedNotesVectorFolder
+			this.settings.relatedNotesVectorFolders
 		);
 	}
 

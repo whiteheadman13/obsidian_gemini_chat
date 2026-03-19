@@ -13,7 +13,7 @@ const createSettings = (overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 	relatedNotesTextWeight: 0.4,
 	relatedNotesTagWeight: 0.2,
 	relatedNotesLinkWeight: 0.15,
-	relatedNotesVectorFolder: '',
+	relatedNotesVectorFolders: [],
 	relatedNotesEmbeddingModel: 'text-embedding-004',
 	relatedNotesHybridLexicalWeight: 0.4,
 	relatedNotesHybridVectorWeight: 0.6,
@@ -84,7 +84,7 @@ describe('VectorIndexService', () => {
 			embedText: async (text: string) => [text.includes('A') ? 1 : 0, text.includes('B') ? 1 : 0],
 		} as any;
 
-		const service = new VectorIndexService(app, access, geminiService, 'obsidian-gemini', 'text-embedding-004', 'Projects');
+		const service = new VectorIndexService(app, access, geminiService, 'obsidian-gemini', 'text-embedding-004', ['Projects']);
 		const first = await service.buildOrUpdateIndex();
 		expect(first.indexed).toBe(2);
 		expect(first.updated).toBe(0);
@@ -103,7 +103,7 @@ describe('VectorIndexService', () => {
 			embedText: async (text: string) => [text.includes('A') ? 1 : 0, text.includes('B') ? 1 : 0],
 		} as any;
 
-		const service = new VectorIndexService(app, access, geminiService, 'obsidian-gemini', 'text-embedding-004', 'Projects');
+		const service = new VectorIndexService(app, access, geminiService, 'obsidian-gemini', 'text-embedding-004', ['Projects']);
 		await service.buildOrUpdateIndex();
 
 		files[1].stat.mtime = 200;

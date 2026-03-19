@@ -11,7 +11,7 @@ interface VectorIndexEntry {
 
 interface VectorIndexData {
 	model: string;
-	folder: string;
+	folders: string[];
 	entries: Record<string, VectorIndexEntry>;
 }
 
@@ -38,7 +38,7 @@ export class VectorIndexService {
 	private accessControl: FolderAccessControl;
 	private geminiService: GeminiService;
 	private embeddingModel: string;
-	private targetFolder: string;
+	private targetFolders: string[];
 	private pluginId: string;
 
 	constructor(
@@ -47,14 +47,14 @@ export class VectorIndexService {
 		geminiService: GeminiService,
 		pluginId: string,
 		embeddingModel: string,
-		targetFolder: string
+		targetFolders: string[]
 	) {
 		this.app = app;
 		this.accessControl = accessControl;
 		this.geminiService = geminiService;
 		this.pluginId = pluginId;
 		this.embeddingModel = embeddingModel || 'text-embedding-004';
-		this.targetFolder = this.normalizeFolder(targetFolder);
+		this.targetFolders = this.normalizeFolders(targetFolders);
 	}
 
 	async buildOrUpdateIndex(): Promise<VectorIndexBuildResult> {
@@ -62,7 +62,7 @@ export class VectorIndexService {
 		const key = this.getIndexKey();
 		const current = store.indexes[key] ?? {
 			model: this.embeddingModel,
-			folder: this.targetFolder,
+			folders: this.targetFolders,
 			entries: {},
 		};
 
@@ -138,7 +138,7 @@ export class VectorIndexService {
 			if (!file) {
 				continue;
 			}
-			if (!this.accessControl.isFileAccessAllowed(file) || !this.isInTargetFolder(file.path)) {
+			if (!this.accessControl.isFileAccessAllowed(file) || !this.isInTargetFolders(file.path)) {
 				continue;
 			}
 
@@ -156,14 +156,14 @@ export class VectorIndexService {
 	private getScopedFiles(): TFile[] {
 		return this.accessControl
 			.filterAllowedFiles(this.app.vault.getMarkdownFiles())
-			.filter((f) => this.isInTargetFolder(f.path));
+			.filter((f) => this.isInTargetFolders(f.path));
 	}
 
-	private isInTargetFolder(path: string): boolean {
-		if (!this.targetFolder) {
+	private isInTargetFolders(path: string): boolean {
+		if (this.targetFolders.length === 0) {
 			return true;
 		}
-		return path === this.targetFolder || path.startsWith(`${this.targetFolder}/`);
+		return this.targetFolders.some((folder) => path === folder || path.startsWith(`${folder}/`));
 	}
 
 	private buildFingerprint(file: TFile): string {
@@ -211,12 +211,20 @@ export class VectorIndexService {
 	}
 
 	private getIndexKey(): string {
-		const folderKey = this.targetFolder || '/';
+		const folderKey = this.targetFolders.length > 0 ? this.targetFolders.join('|') : '/';
 		return `${this.embeddingModel}::${folderKey}`;
 	}
 
-	private normalizeFolder(folder: string): string {
-		return folder.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+	private normalizeFolders(folders: string[]): string[] {
+		if (!Array.isArray(folders)) {
+			return [];
+		}
+
+		const normalized = folders
+			.map((folder) => folder.trim().replace(/^\/+/, '').replace(/\/+$/, ''))
+			.filter((folder) => folder.length > 0);
+
+		return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b, 'ja'));
 	}
 
 	private getIndexFilePath(): string {
@@ -238,6 +246,15 @@ export class VectorIndexService {
 			if (parsed.version !== 1 || !parsed.indexes || typeof parsed.indexes !== 'object') {
 				return { version: 1, indexes: {} };
 			}
+
+			for (const index of Object.values(parsed.indexes)) {
+				const withLegacy = index as VectorIndexData & { folder?: string };
+				if (!Array.isArray(withLegacy.folders)) {
+					const legacyFolder = typeof withLegacy.folder === 'string' ? withLegacy.folder : '';
+					withLegacy.folders = this.normalizeFolders(legacyFolder ? [legacyFolder] : []);
+				}
+			}
+
 			return { version: 1, indexes: parsed.indexes };
 		} catch {
 			return { version: 1, indexes: {} };
