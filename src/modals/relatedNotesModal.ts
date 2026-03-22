@@ -26,7 +26,7 @@ export class RelatedNotesModal extends SuggestModal<RelatedNoteCandidate> {
 		}
 	}
 
-	onChooseSuggestion(item: RelatedNoteCandidate): void {
-		this.app.workspace.getLeaf(true).openFile(item.file);
+	onChooseSuggestion(item: RelatedNoteCandidate, _evt: MouseEvent | KeyboardEvent): void {
+		void this.app.workspace.getLeaf('split').openFile(item.file);
 	}
 }

@@ -331,7 +331,7 @@
 
 - method: RelatedNotesModal.getSuggestions(query: string): RelatedNoteCandidate[] => Returns suggestions.
 - method: RelatedNotesModal.renderSuggestion(item: RelatedNoteCandidate, el: HTMLElement): void => Renders UI content for the current state.
-- method: RelatedNotesModal.onChooseSuggestion(item: RelatedNoteCandidate): void => Handles selection of a suggested candidate.
+- method: RelatedNotesModal.onChooseSuggestion(item: RelatedNoteCandidate, _evt: MouseEvent | KeyboardEvent): void => Opens the selected related note in an adjacent pane.
 
 ## src/modals/resumeModeModal.ts
 
