@@ -695,7 +695,7 @@ export class ChatView extends ItemView {
 		}
 
 		// 入力パターンを解析（@outNoteFormat: / @instruction: / @reference: / @outFolder: / @file:）
-		const match = atToken.match(/^@(outNoteFormat|instruction|reference|outFolder|attachment):(.*)$/);
+		const match = atToken.match(/^@(outNoteFormat|instruction|reference|outFolder|file):(.*)$/);
 		if (!match) {
 			this.autocompleteContainer.style.display = 'none';
 			return;
@@ -738,7 +738,11 @@ export class ChatView extends ItemView {
 		const token = beforeCursor.substring(lastAtIndex);
 
 		// @だけ、または @(outNoteFormat|instruction|reference|outFolder|file):で始まるかチェック
-		if (token === '@' || /^@(outNoteFormat|instruction|reference|outFolder|file):?(?:[^\s]*)?$/.test(token)) {
+		if (
+			token === '@' ||
+			/^@[a-zA-Z]+$/.test(token) ||
+			/^@(outNoteFormat|instruction|reference|outFolder|file):?(?:[^\s]*)?$/.test(token)
+		) {
 			return token;
 		}
 

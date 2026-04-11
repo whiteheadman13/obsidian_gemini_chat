@@ -155,8 +155,8 @@
 - method: ChatView.handleSaveHistory() => Handles a user-triggered action flow end-to-end.
 - method: ChatView.isFileEditResponse(response: string): boolean => Checks whether is file edit response.
 - method: ChatView.extractCodeFromResponse(response: string): string | null => Extracts the required subset of data from input.
-- method: ChatView.updateAutocomplete() => Updates internal state and persists related changes when needed.
-- method: ChatView.findAtTokenAtCursor(text: string, cursorPos: number): string | null => Finds and returns matching items from available sources.
+- method: ChatView.updateAutocomplete() => Parses the current @token and renders type/file/folder autocomplete candidates.
+- method: ChatView.findAtTokenAtCursor(text: string, cursorPos: number): string | null => Returns the active @token at cursor, including partial type input like @r.
 - method: ChatView.filterFilesForPattern(pattern: string): TFile[] => Filters candidates and returns the matching subset.
 - method: ChatView.filterFoldersForPattern(pattern: string): string[] => Filters candidates and returns the matching subset.
 - method: ChatView.renderTypeSelection(partialInput: string = '') => Renders UI content for the current state.
