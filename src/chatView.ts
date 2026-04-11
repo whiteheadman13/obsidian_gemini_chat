@@ -42,16 +42,16 @@ export class ChatView extends ItemView {
 		const container = this.containerEl.children[1];
 		if (!container) return;
 		container.empty();
-		container.createEl('div', { cls: 'chat-container' });
+		const chatContainer = container.createEl('div', { cls: 'chat-container' });
 
 		// Create chat messages container
-		this.messagesContainer = container.createEl('div', {
+		this.messagesContainer = chatContainer.createEl('div', {
 			cls: 'chat-messages',
 		});
 		this.messagesContainer.id = 'chat-messages';
 
 		// Create input area
-		const inputContainer = container.createEl('div', {
+		const inputContainer = chatContainer.createEl('div', {
 			cls: 'chat-input-container',
 		});
 
