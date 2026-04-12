@@ -283,15 +283,43 @@
 
 ## src/main.ts
 
-- method: MyPlugin.onload() => Registers commands including lexical/vector/hybrid related-note workflows.
+- method: MyPlugin.onload() => Registers commands including lexical/vector/hybrid related-note workflows and note-grounded Q&A.
 - method: MyPlugin.onunload() => Handles onunload logic for this module.
 - method: MyPlugin.activateView() => Handles activate view logic for this module.
 - method: MyPlugin.activateAgentLogView(): Promise<AgentLogView | null> => Handles activate agent log view logic for this module.
 - method: MyPlugin.loadSettings() => Loads settings and migrates legacy single vector folder into multi-folder config.
 - method: MyPlugin.saveSettings() => Saves the current data to storage.
+- method: MyPlugin.createQuestionAnswerNote(result: NoteQaResult) => Persists a note-grounded Q&A response into the chat history area.
+- method: MyPlugin.buildQuestionAnswerNoteContent(result: NoteQaResult): string => Formats a persisted note-grounded Q&A result as markdown including scope/exclusion diagnostics.
+- method: MyPlugin.sanitizeQaFileName(question: string): string => Normalizes a user question into a safe filename fragment.
+- method: MyPlugin.ensureFolder(folderPath: string): Promise<void> => Creates nested folders before generated note output is written.
 - method: MyPlugin.createVectorIndexService(accessControl: FolderAccessControl): VectorIndexService | null => Creates a vector index service using embedding settings and multiple target folders.
 - method: MyPlugin.convertVectorResults(rows: VectorSearchResult[]): RelatedNoteCandidate[] => Converts vector similarity rows into modal-ready related note candidates.
 - method: MyPlugin.mergeHybridResults(lexical: RelatedNoteCandidate[], vectorRows: VectorSearchResult[]): RelatedNoteCandidate[] => Merges lexical and vector scores using normalized hybrid weights.
+
+## src/modals/noteQaPromptModal.ts
+
+- method: NoteQaPromptModal.onOpen() => Renders the question input modal for note-grounded Q&A execution.
+- method: NoteQaPromptModal.onClose() => Cleans up modal contents and resolves null when dismissed.
+- method: NoteQaPromptModal.submit() => Validates the question input and submits note-grounded Q&A options.
+- method: NoteQaPromptModal.resolveOnce(result: NoteQaPromptResult | null) => Resolves pending note-grounded Q&A modal state exactly once.
+- function: promptForNoteQa(app: App, initialQuestion = ''): Promise<NoteQaPromptResult | null> => Opens the note-grounded Q&A prompt modal and resolves user input.
+
+## src/noteQaService.ts
+
+- method: NoteQaService.answerQuestion(question: string, useGoogleSearch: boolean): Promise<NoteQaResult> => Finds relevant notes, builds bounded context, and generates a grounded answer with scope diagnostics.
+- method: NoteQaService.collectScopeDiagnostics(): NoteQaDiagnostics => Collects in-scope and out-of-scope note/folder statistics from access-control filtering.
+- method: NoteQaService.findCandidates(question: string): Promise<QaCandidate[]> => Collects lexical candidates and optionally reranks them with vectors.
+- method: NoteQaService.findLexicalCandidates(question: string, limit: number): Promise<QaCandidate[]> => Scores accessible markdown files against the question text using lexical overlap.
+- method: NoteQaService.mergeCandidates(lexical: QaCandidate[], vectorRows: VectorSearchResult[]): QaCandidate[] => Merges lexical and vector candidates using hybrid weights.
+- method: NoteQaService.buildSources(candidates: QaCandidate[], question: string): Promise<NoteQaSource[]> => Converts ranked candidates into bounded excerpts for prompting.
+- method: NoteQaService.extractRelevantExcerpt(content: string, questionTerms: string[], maxChars: number): string => Selects the most relevant cleaned note sections within a per-note budget.
+- method: NoteQaService.scoreExcerpt(text: string, questionTerms: string[]): number => Scores a cleaned section by question-term matches.
+- method: NoteQaService.buildPrompt(question: string, sources: NoteQaSource[]): string => Builds the grounded answer prompt from bounded note excerpts.
+- method: NoteQaService.overlapScore(questionTerms: string[], candidateTerms: Set<string>): number => Calculates lexical overlap between question terms and candidate terms.
+- method: NoteQaService.stripMarkdown(text: string): string => Removes common markdown constructs before lexical scoring and excerpting.
+- method: NoteQaService.tokenize(text: string): string[] => Tokenizes latin and Japanese text into normalized search terms.
+- method: NoteQaService.getFolderPath(filePath: string): string => Extracts a folder path label from a note path for diagnostics output.
 
 ## src/modals/agentConfirmModal.ts
 
@@ -391,7 +419,7 @@
 
 ## src/settings.ts
 
-- method: SampleSettingTab.display(): void => Renders plugin settings including related-note lexical/vector/hybrid options.
+- method: SampleSettingTab.display(): void => Renders plugin settings including note-grounded Q&A and related-note retrieval options.
 - method: SampleSettingTab.displayFolderList(containerEl: HTMLElement, folders: string[], onChange: (folders: string[]) => void, label: string) | Handles display folder list logic for this module.
 - method: SampleSettingTab.updateFolderSuggestions(inputElement: HTMLInputElement, container: HTMLElement) => Updates internal state and persists related changes when needed.
 - method: SampleSettingTab.getAllFoldersInVault(): string[] => Returns all folders in vault.
@@ -404,6 +432,8 @@
 
 - method: VectorIndexService.buildOrUpdateIndex(): Promise<VectorIndexBuildResult> => Builds or updates vector index entries using fingerprint-based incremental processing.
 - method: VectorIndexService.findSimilarNotes(activeFile: TFile, limit: number): Promise<VectorSearchResult[]> => Computes local cosine similarity against indexed vectors and returns top matches.
+- method: VectorIndexService.findSimilarByText(queryText: string, limit: number): Promise<VectorSearchResult[]> => Computes local cosine similarity for an arbitrary query string against indexed vectors.
+- method: VectorIndexService.searchByVector(queryVector: number[], limit: number, excludePath: string | undefined, current: VectorIndexData): VectorSearchResult[] => Reuses cosine ranking logic for file-based and text-based vector searches.
 - method: VectorIndexService.getScopedFiles(): TFile[] => Returns markdown files in scope after multi-folder and access-control filtering.
 - method: VectorIndexService.isInTargetFolders(path: string): boolean => Checks whether a path belongs to any configured target folder scope.
 - method: VectorIndexService.buildFingerprint(file: TFile): string => Creates a deterministic fingerprint from file metadata and embedding model.

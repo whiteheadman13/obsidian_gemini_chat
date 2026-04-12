@@ -4,6 +4,7 @@ import MyPlugin from "./main";
 export interface MyPluginSettings {
 	geminiApiKey: string;
 	geminiModel: string;
+	qaModel: string;
 	chatHistoryFolder: string;
 	relatedNotesMode: 'lexical' | 'vector' | 'hybrid';
 	relatedNotesLimit: number;
@@ -23,6 +24,11 @@ export interface MyPluginSettings {
 	agentBlockedFolders: string[];
 	agentTemplateFolder: string;
 	agentTemplateFile: string;
+	qaInitialLexicalLimit: number;
+	qaFinalSourceLimit: number;
+	qaMaxCharsPerNote: number;
+	qaMaxTotalChars: number;
+	qaEnableVectorRerank: boolean;
 	noteSplitCriteria: string;
 }
 
@@ -37,6 +43,7 @@ export const DEFAULT_NOTE_SPLIT_CRITERIA = `以下の知識タイプごとに分
 export const DEFAULT_SETTINGS: MyPluginSettings = {
 	geminiApiKey: '',
 	geminiModel: 'gemini-3.1-flash-lite-preview',
+	qaModel: 'gemini-3.1-flash-lite-preview',
 	chatHistoryFolder: 'Chat History',
 	relatedNotesMode: 'lexical',
 	relatedNotesLimit: 10,
@@ -56,6 +63,11 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	agentBlockedFolders: [],
 	agentTemplateFolder: '',
 	agentTemplateFile: '',
+	qaInitialLexicalLimit: 30,
+	qaFinalSourceLimit: 6,
+	qaMaxCharsPerNote: 800,
+	qaMaxTotalChars: 5000,
+	qaEnableVectorRerank: true,
 	noteSplitCriteria: DEFAULT_NOTE_SPLIT_CRITERIA,
 }
 
@@ -105,6 +117,83 @@ export class SampleSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.chatHistoryFolder)
 				.onChange(async (value) => {
 					this.plugin.settings.chatHistoryFolder = value;
+					await this.plugin.saveSettings();
+				}));
+
+		containerEl.createEl('h2', { text: 'ノートQ&A' });
+
+		new Setting(containerEl)
+			.setName('Q&Aモデル')
+			.setDesc('ノート根拠Q&Aで使用するGeminiモデルを選択してください')
+			.addDropdown((dropdown) => dropdown
+				.addOption('gemini-3.1-flash-lite-preview', 'Gemini 3.1 Flash Lite Preview')
+				.addOption('gemini-3-flash-preview', 'Gemini 3 Flash Preview')
+				.addOption('gemini-3.1-pro-preview', 'Gemini 3.1 Pro Preview')
+				.setValue(this.plugin.settings.qaModel)
+				.onChange(async (value) => {
+					this.plugin.settings.qaModel = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Q&A 一次候補件数')
+			.setDesc('質問文との語彙一致で広めに拾う候補数（1〜100）')
+			.addText((text) => text
+				.setPlaceholder('30')
+				.setValue(String(this.plugin.settings.qaInitialLexicalLimit))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed)) return;
+					this.plugin.settings.qaInitialLexicalLimit = Math.max(1, Math.min(100, Math.round(parsed)));
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Q&A 最終参照ノート数')
+			.setDesc('最終的に回答根拠として投入するノート数（1〜20）')
+			.addText((text) => text
+				.setPlaceholder('6')
+				.setValue(String(this.plugin.settings.qaFinalSourceLimit))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed)) return;
+					this.plugin.settings.qaFinalSourceLimit = Math.max(1, Math.min(20, Math.round(parsed)));
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Q&A ノートごとの最大文字数')
+			.setDesc('各ノートから回答に渡す抜粋の最大文字数（100〜4000）')
+			.addText((text) => text
+				.setPlaceholder('800')
+				.setValue(String(this.plugin.settings.qaMaxCharsPerNote))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed)) return;
+					this.plugin.settings.qaMaxCharsPerNote = Math.max(100, Math.min(4000, Math.round(parsed)));
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Q&A 全体コンテキスト上限')
+			.setDesc('全ノート抜粋の合計文字数上限（500〜20000）')
+			.addText((text) => text
+				.setPlaceholder('5000')
+				.setValue(String(this.plugin.settings.qaMaxTotalChars))
+				.onChange(async (value) => {
+					const parsed = Number(value);
+					if (!Number.isFinite(parsed)) return;
+					this.plugin.settings.qaMaxTotalChars = Math.max(500, Math.min(20000, Math.round(parsed)));
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Q&A でベクトル再ランクを使う')
+			.setDesc('有効時は一次候補を埋め込みで再ランクして精度を上げます。APIキーとインデックスが必要です')
+			.addToggle((toggle) => toggle
+				.setValue(this.plugin.settings.qaEnableVectorRerank)
+				.onChange(async (value) => {
+					this.plugin.settings.qaEnableVectorRerank = value;
 					await this.plugin.saveSettings();
 				}));
 

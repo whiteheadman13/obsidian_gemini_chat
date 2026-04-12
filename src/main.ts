@@ -11,6 +11,8 @@ import { AgentLogView, AGENT_LOG_VIEW_TYPE } from './agentLogView';
 import { SessionResumeService } from './agent/sessionResumeService';
 import { FolderAccessControl } from './folderAccessControl';
 import { GeminiService } from './geminiService';
+import { promptForNoteQa } from './modals/noteQaPromptModal';
+import { NoteQaService, type NoteQaResult } from './noteQaService';
 import { RelatedNotesService, type RelatedNoteCandidate } from './relatedNotesService';
 import { RelatedNotesModal } from './modals/relatedNotesModal';
 import { VectorIndexService, type VectorSearchResult } from './vectorIndexService';
@@ -122,6 +124,36 @@ export default class MyPlugin extends Plugin {
 		});
 
 		// Add command to suggest related notes for the current note
+		this.addCommand({
+			id: 'answer-question-with-notes',
+			name: 'ノートを根拠に質問へ回答',
+			callback: async () => {
+				const prompt = await promptForNoteQa(this.app);
+				if (!prompt) {
+					return;
+				}
+
+				if (!this.settings.geminiApiKey) {
+					new Notice('ノートQ&AにはGemini APIキーが必要です');
+					return;
+				}
+
+				const accessControl = new FolderAccessControl(this.settings);
+				const gemini = new GeminiService(this.settings.geminiApiKey, this.settings.qaModel);
+				const vectorService = this.settings.qaEnableVectorRerank
+					? this.createVectorIndexService(accessControl)
+					: null;
+				const qaService = new NoteQaService(this.app, this.settings, accessControl, gemini, vectorService);
+
+				new Notice('ノートQ&Aを実行しています...');
+				const result = await qaService.answerQuestion(prompt.question, prompt.useGoogleSearch);
+				const file = await this.createQuestionAnswerNote(result);
+				const leaf = this.app.workspace.getLeaf('tab');
+				await leaf.openFile(file);
+				new Notice(`Q&A結果を保存しました: ${file.path}（対象外 ${result.diagnostics.outOfScopeNotes}件）`);
+			}
+		});
+
 		this.addCommand({
 			id: 'find-related-notes',
 			name: '現在ノートの関連ノートを提案',
@@ -348,6 +380,83 @@ export default class MyPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	private async createQuestionAnswerNote(result: NoteQaResult) {
+		const folderPath = `${this.settings.chatHistoryFolder}/Note QA`;
+		await this.ensureFolder(folderPath);
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+		const safeTitle = this.sanitizeQaFileName(result.question);
+		const path = `${folderPath}/${timestamp}_${safeTitle}.md`;
+		return await this.app.vault.create(path, this.buildQuestionAnswerNoteContent(result));
+	}
+
+	private buildQuestionAnswerNoteContent(result: NoteQaResult): string {
+		const sources = result.sources.length > 0
+			? result.sources.map((source) => [
+				`### ${source.path}`,
+				`- スコア: ${source.score.toFixed(3)}`,
+				`- 理由: ${source.reasons.join(' / ') || '関連度上位'}`,
+				'',
+				source.excerpt,
+			].join('\n')).join('\n\n')
+			: '根拠ノートなし';
+
+		const excludedFolders = result.diagnostics.outOfScopeFolders.length > 0
+			? result.diagnostics.outOfScopeFolders.map((folder) => `- ${folder}`).join('\n')
+			: '- なし';
+
+		const vectorTargetFolders = result.diagnostics.vectorTargetFolders.length > 0
+			? result.diagnostics.vectorTargetFolders.join(', ')
+			: '(全体対象)';
+
+		return [
+			`# ノートQ&A: ${result.question}`,
+			'',
+			`- 実行日時: ${new Date().toLocaleString('ja-JP')}`,
+			`- Google検索併用: ${result.usedGoogleSearch ? 'あり' : 'なし'}`,
+			`- 全ノート数: ${result.diagnostics.totalNotes}`,
+			`- 調査対象ノート数: ${result.diagnostics.inScopeNotes}`,
+			`- 調査対象外ノート数: ${result.diagnostics.outOfScopeNotes}`,
+			'',
+			'## 回答',
+			result.answer,
+			'',
+			'## 根拠ノート',
+			sources,
+			'',
+			'## 調査対象外の範囲',
+			'### 対象外フォルダ',
+			excludedFolders,
+			'',
+			'### 適用されたアクセス制御',
+			result.diagnostics.accessControlSummary,
+			'',
+			'### ベクトル再ランク設定',
+			`- 有効: ${result.diagnostics.vectorRerankEnabled ? 'はい' : 'いいえ'}`,
+			`- ベクトル対象フォルダ: ${vectorTargetFolders}`,
+		].join('\n');
+	}
+
+	private sanitizeQaFileName(question: string): string {
+		const sanitized = question
+			.replace(/[\\/:*?"<>|]/g, '-')
+			.replace(/[\r\n\t]+/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim();
+
+		return (sanitized || 'note-qa').slice(0, 60);
+	}
+
+	private async ensureFolder(folderPath: string): Promise<void> {
+		const parts = folderPath.split('/').filter((part) => part.length > 0);
+		let current = '';
+		for (const part of parts) {
+			current = current ? `${current}/${part}` : part;
+			if (!this.app.vault.getAbstractFileByPath(current)) {
+				await this.app.vault.createFolder(current);
+			}
+		}
 	}
 
 	private createVectorIndexService(accessControl: FolderAccessControl): VectorIndexService | null {

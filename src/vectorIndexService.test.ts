@@ -6,6 +6,7 @@ import { VectorIndexService } from './vectorIndexService';
 const createSettings = (overrides: Partial<MyPluginSettings> = {}): MyPluginSettings => ({
 	geminiApiKey: '',
 	geminiModel: 'gemini-3.1-flash-lite-preview',
+	qaModel: 'gemini-3.1-flash-lite-preview',
 	chatHistoryFolder: 'Chat History',
 	relatedNotesMode: 'lexical',
 	relatedNotesLimit: 10,
@@ -25,6 +26,11 @@ const createSettings = (overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 	agentBlockedFolders: [],
 	agentTemplateFolder: '',
 	agentTemplateFile: '',
+	qaInitialLexicalLimit: 30,
+	qaFinalSourceLimit: 6,
+	qaMaxCharsPerNote: 800,
+	qaMaxTotalChars: 5000,
+	qaEnableVectorRerank: true,
 	noteSplitCriteria: '',
 	...overrides,
 });
@@ -111,5 +117,20 @@ describe('VectorIndexService', () => {
 		expect(updated.indexed).toBe(0);
 		expect(updated.updated).toBe(1);
 		expect(updated.skipped).toBe(1);
+	});
+
+	it('質問文から類似ノートを検索できる', async () => {
+		const { app } = createMockApp();
+		const access = new FolderAccessControl(createSettings());
+		const geminiService = {
+			embedText: async (text: string) => [text.toLowerCase().includes('alpha') ? 1 : 0, text.toLowerCase().includes('beta') ? 1 : 0],
+		} as any;
+
+		const service = new VectorIndexService(app, access, geminiService, 'obsidian-gemini', 'gemini-embedding-001', ['Projects']);
+		await service.buildOrUpdateIndex();
+
+		const results = await service.findSimilarByText('alpha に関する質問', 2);
+		expect(results).toHaveLength(1);
+		expect(results[0]?.file.path).toBe('Projects/A.md');
 	});
 });

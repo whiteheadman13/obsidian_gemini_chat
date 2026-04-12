@@ -126,11 +126,32 @@ export class VectorIndexService {
 
 		const embeddingText = await this.buildEmbeddingText(activeFile);
 		const activeVector = await this.geminiService.embedText(embeddingText, this.embeddingModel);
+		return this.searchByVector(activeVector, limit, activeFile.path, current);
+	}
+
+	async findSimilarByText(queryText: string, limit: number): Promise<VectorSearchResult[]> {
+		const store = await this.loadStore();
+		const key = this.getIndexKey();
+		const current = store.indexes[key];
+		if (!current) {
+			return [];
+		}
+
+		const queryVector = await this.geminiService.embedText(queryText.trim(), this.embeddingModel);
+		return this.searchByVector(queryVector, limit, undefined, current);
+	}
+
+	private searchByVector(
+		queryVector: number[],
+		limit: number,
+		excludePath: string | undefined,
+		current: VectorIndexData
+	): VectorSearchResult[] {
 		const filesByPath = new Map(this.app.vault.getMarkdownFiles().map((f) => [f.path, f]));
 
 		const rows: VectorSearchResult[] = [];
 		for (const entry of Object.values(current.entries)) {
-			if (entry.path === activeFile.path) {
+			if (excludePath && entry.path === excludePath) {
 				continue;
 			}
 
@@ -142,7 +163,7 @@ export class VectorIndexService {
 				continue;
 			}
 
-			const score = this.cosineSimilarity(activeVector, entry.vector);
+			const score = this.cosineSimilarity(queryVector, entry.vector);
 			if (score > 0) {
 				rows.push({ file, score });
 			}

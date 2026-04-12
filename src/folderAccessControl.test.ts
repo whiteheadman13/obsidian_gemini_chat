@@ -6,6 +6,7 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 	return {
 		geminiApiKey: '',
 		geminiModel: 'gemini-3.1-flash-lite-preview',
+		qaModel: 'gemini-3.1-flash-lite-preview',
 		chatHistoryFolder: 'Chat History',
 		relatedNotesMode: 'lexical',
 		relatedNotesLimit: 10,
@@ -25,6 +26,11 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 		agentBlockedFolders: [],
 		agentTemplateFolder: '',
 		agentTemplateFile: '',
+		qaInitialLexicalLimit: 30,
+		qaFinalSourceLimit: 6,
+		qaMaxCharsPerNote: 800,
+		qaMaxTotalChars: 5000,
+		qaEnableVectorRerank: true,
 		noteSplitCriteria: '',
 		...overrides,
 	};
