@@ -697,15 +697,11 @@ export class ChatView extends ItemView {
 		const text = this.inputField.value;
 		const cursorPos = this.inputField.selectionStart;
 
-		console.log('[autocomplete] text:', JSON.stringify(text), 'cursor:', cursorPos);
-
 		// 先頭の /テンプレート補完を優先チェック
 		const slashToken = this.findSlashTokenAtCursor(text, cursorPos);
-		console.log('[autocomplete] slashToken:', slashToken);
 		if (slashToken !== null) {
 			const pattern = slashToken.substring(1); // / を除いた部分
 			const templateFiles = this.filterTemplateFiles(pattern);
-			console.log('[autocomplete] templateFiles:', templateFiles.length, templateFiles.map(f => f.path));
 			if (templateFiles.length === 0) {
 				this.autocompleteContainer.style.display = 'none';
 				return;
@@ -1106,11 +1102,9 @@ export class ChatView extends ItemView {
 	private filterTemplateFiles(pattern: string): TFile[] {
 		const folder = this.plugin.settings.chatPromptTemplateFolder.trim().replace(/^\/+/, '').replace(/\/+$/, '');
 		let files = this.app.vault.getMarkdownFiles();
-		console.log('[filterTemplate] folder setting:', JSON.stringify(folder), 'total md files:', files.length);
 
 		if (folder) {
 			files = files.filter(file => file.path.startsWith(`${folder}/`));
-			console.log('[filterTemplate] after folder filter:', files.length);
 		}
 
 		if (pattern) {
