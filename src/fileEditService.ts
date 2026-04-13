@@ -55,6 +55,7 @@ export class FileEditService {
 			// AIに修正案を依頼
 			new Notice('AIが修正案を生成中...');
 			const { modifiedContent, searchReferences } = await this.requestModification(
+				file.basename,
 				content,
 				instruction,
 				referenceContents,
@@ -84,6 +85,7 @@ export class FileEditService {
 	 * AIに修正を依頼
 	 */
 	private async requestModification(
+		targetNoteName: string,
 		content: string,
 		instruction: string,
 		referenceNotes: Array<{ path: string; content: string }>,
@@ -99,6 +101,8 @@ export class FileEditService {
 
 指示: ${instruction}
 
+編集対象ノート名: ${targetNoteName}
+
 主要ノート（編集対象）:
 \`\`\`
 ${content}
@@ -107,6 +111,8 @@ ${content}
 ${referenceSection}
 
 修正後のファイル全文を出力してください。説明は不要です。コードブロックも不要です。ファイルの内容だけを出力してください。`;
+
+		console.log('[FileEditService] Sending prompt for current note edit:', prompt);
 
 		const result = await this.geminiService.chatWithMetadata(
 			[{ role: 'user', content: prompt }],

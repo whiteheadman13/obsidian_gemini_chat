@@ -242,7 +242,7 @@
 
 - method: FileEditService.getActiveFile(): TFile | null => Returns active file.
 - method: FileEditService.editFileWithAI(instruction: string, referenceFiles: TFile[] = [], useGoogleSearch: boolean = false): Promise<void> => Handles edit file with ai logic for this module.
-- method: FileEditService.requestModification(content: string, instruction: string, referenceNotes: Array<{ path: string; content: string }>, useGoogleSearch: boolean): Promise<{ modifiedContent: string; searchReferences: string[] }> => Handles request modification logic for this module.
+- method: FileEditService.requestModification(targetNoteName: string, content: string, instruction: string, referenceNotes: Array<{ path: string; content: string }>, useGoogleSearch: boolean): Promise<{ modifiedContent: string; searchReferences: string[] }> => Builds the file-edit prompt with the active note name, logs it to the console, and requests the modified content from Gemini.
 - method: FileEditService.loadReferenceContents(referenceFiles: TFile[], targetPath: string): Promise<Array<{ path: string; content: string }>> => Loads data from storage and prepares it for use.
 - method: FileEditService.buildReferenceSection(referenceNotes: Array<{ path: string; content: string }>): string => Builds derived data needed for downstream processing.
 - method: FileEditService.showDiffView(file: TFile, oldContent: string, newContent: string, metadata?: { searchEnabled?: boolean; searchReferences?: string[] }): Promise<void> => Displays a UI prompt or interactive element.
