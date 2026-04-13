@@ -144,8 +144,9 @@
 - method: ChatView.initializeGeminiService() => Handles initialize gemini service logic for this module.
 - method: ChatView.getViewType() => Returns view type.
 - method: ChatView.getDisplayText() => Returns display text.
-- method: ChatView.onOpen() => Initializes the view/modal when it is opened.
+- method: ChatView.onOpen() => Builds chat UI elements, wires handlers, and requests input focus after mount.
 - method: ChatView.onClose() => Cleans up state when the view/modal is closed.
+- method: ChatView.focusInputField(retryCount = 6) => Focuses the chat textarea and retries briefly until the DOM input becomes available.
 - method: ChatView.isMarkdownTableLine(line: string): boolean => Checks whether is markdown table line.
 - method: ChatView.isMarkdownTableSeparator(line: string): boolean => Checks whether is markdown table separator.
 - method: ChatView.normalizeMarkdownForRender(content: string): string => Normalizes input into a consistent format.
@@ -285,7 +286,7 @@
 
 - method: MyPlugin.onload() => Registers commands including lexical/vector/hybrid related-note workflows and note-grounded Q&A.
 - method: MyPlugin.onunload() => Handles onunload logic for this module.
-- method: MyPlugin.activateView() => Handles activate view logic for this module.
+- method: MyPlugin.activateView() => Opens/reveals chat view, sets it active with focus, and moves keyboard focus to chat input.
 - method: MyPlugin.activateAgentLogView(): Promise<AgentLogView | null> => Handles activate agent log view logic for this module.
 - method: MyPlugin.loadSettings() => Loads settings and migrates legacy single vector folder into multi-folder config.
 - method: MyPlugin.saveSettings() => Saves the current data to storage.

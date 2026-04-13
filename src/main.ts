@@ -331,6 +331,11 @@ export default class MyPlugin extends Plugin {
 
 		if (leaf) {
 			workspace.revealLeaf(leaf);
+			workspace.setActiveLeaf(leaf, true, true);
+			const view = leaf.view;
+			if (view instanceof ChatView) {
+				view.focusInputField();
+			}
 		}
 	}
 

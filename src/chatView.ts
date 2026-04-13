@@ -244,10 +244,27 @@ export class ChatView extends ItemView {
 				}
 			});
 		}
+
+		this.focusInputField();
 	}
 
 	async onClose() {
 		// Nothing to clean up
+	}
+
+	focusInputField(retryCount = 6) {
+		if (this.inputField && this.inputField.isConnected) {
+			this.inputField.focus();
+			const caret = this.inputField.value.length;
+			this.inputField.setSelectionRange(caret, caret);
+			return;
+		}
+
+		if (retryCount <= 0) {
+			return;
+		}
+
+		globalThis.setTimeout(() => this.focusInputField(retryCount - 1), 30);
 	}
 
 	private isMarkdownTableLine(line: string): boolean {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ChatView } from './chatView';
 
 describe('ChatView.findAtTokenAtCursor', () => {
@@ -18,5 +18,25 @@ describe('ChatView.findAtTokenAtCursor', () => {
 		const text = 'test@example.com';
 		const token = (ChatView.prototype as any).findAtTokenAtCursor(text, text.length);
 		expect(token).toBeNull();
+	});
+});
+
+describe('ChatView.focusInputField', () => {
+	it('入力欄が存在する場合はフォーカスしてキャレットを末尾へ移動する', () => {
+		const focus = vi.fn();
+		const setSelectionRange = vi.fn();
+		const context = {
+			inputField: {
+				isConnected: true,
+				value: 'abc',
+				focus,
+				setSelectionRange,
+			},
+		};
+
+		(ChatView.prototype as any).focusInputField.call(context, 0);
+
+		expect(focus).toHaveBeenCalledTimes(1);
+		expect(setSelectionRange).toHaveBeenCalledWith(3, 3);
 	});
 });
