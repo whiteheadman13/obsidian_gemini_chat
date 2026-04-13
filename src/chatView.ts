@@ -111,7 +111,7 @@ export class ChatView extends ItemView {
 
 		const editNoteButton = buttonRow.createEl('button', {
 			cls: 'chat-edit-note-button',
-			text: 'AIでノート編集',
+			text: '現在ノート編集',
 		});
 
 		const saveButton = buttonRow.createEl('button', {
@@ -121,7 +121,7 @@ export class ChatView extends ItemView {
 
 		const clearButton = buttonRow.createEl('button', {
 			cls: 'chat-clear-button',
-			text: '履歴をクリア',
+			text: 'クリア',
 		});
 
 		attachButton.addEventListener('click', async () => {
@@ -697,6 +697,23 @@ export class ChatView extends ItemView {
 		const text = this.inputField.value;
 		const cursorPos = this.inputField.selectionStart;
 
+		console.log('[autocomplete] text:', JSON.stringify(text), 'cursor:', cursorPos);
+
+		// 先頭の /テンプレート補完を優先チェック
+		const slashToken = this.findSlashTokenAtCursor(text, cursorPos);
+		console.log('[autocomplete] slashToken:', slashToken);
+		if (slashToken !== null) {
+			const pattern = slashToken.substring(1); // / を除いた部分
+			const templateFiles = this.filterTemplateFiles(pattern);
+			console.log('[autocomplete] templateFiles:', templateFiles.length, templateFiles.map(f => f.path));
+			if (templateFiles.length === 0) {
+				this.autocompleteContainer.style.display = 'none';
+				return;
+			}
+			this.renderTemplateAutocompleteList(templateFiles);
+			return;
+		}
+
 		// カーソル位置での@トークンを検索
 		const atToken = this.findAtTokenAtCursor(text, cursorPos);
 		if (!atToken) {
@@ -1070,6 +1087,125 @@ export class ChatView extends ItemView {
 		setTimeout(() => {
 			this.updateAutocomplete();
 		}, 10);
+	}
+
+	/**
+	 * 先頭の /トークンを検出
+	 * 入力が先頭（空白許容）で / から始まる場合のみトークンを返す
+	 */
+	private findSlashTokenAtCursor(text: string, cursorPos: number): string | null {
+		const beforeCursor = text.substring(0, cursorPos);
+		const match = beforeCursor.match(/^\s*(\/[^\s]*)$/);
+		if (!match || !match[1]) return null;
+		return match[1];
+	}
+
+	/**
+	 * テンプレートフォルダ設定に基づいてテンプレートファイルを絞り込み
+	 */
+	private filterTemplateFiles(pattern: string): TFile[] {
+		const folder = this.plugin.settings.chatPromptTemplateFolder.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+		let files = this.app.vault.getMarkdownFiles();
+		console.log('[filterTemplate] folder setting:', JSON.stringify(folder), 'total md files:', files.length);
+
+		if (folder) {
+			files = files.filter(file => file.path.startsWith(`${folder}/`));
+			console.log('[filterTemplate] after folder filter:', files.length);
+		}
+
+		if (pattern) {
+			const lowerPattern = pattern.toLowerCase();
+			files = files.filter(file =>
+				file.basename.toLowerCase().includes(lowerPattern) ||
+				file.path.toLowerCase().includes(lowerPattern)
+			);
+		}
+
+		return files.slice(0, 10);
+	}
+
+	/**
+	 * テンプレート補完リストを描画＆表示
+	 */
+	private renderTemplateAutocompleteList(files: TFile[]) {
+		if (!this.autocompleteContainer || !this.inputField) return;
+
+		this.autocompleteContainer.empty();
+
+		const listEl = this.autocompleteContainer.createEl('ul', {
+			cls: 'chat-autocomplete-list',
+		});
+
+		files.forEach((file, index) => {
+			const itemEl = listEl.createEl('li', {
+				cls: 'chat-autocomplete-item',
+				attr: {
+					'data-index': index.toString(),
+					'tabindex': '0',
+				},
+			});
+
+			itemEl.createEl('span', {
+				cls: 'chat-autocomplete-filename',
+				text: file.basename,
+			});
+
+			const folderPath = file.path.substring(0, file.path.lastIndexOf('/'));
+			if (folderPath) {
+				itemEl.createEl('span', {
+					cls: 'chat-autocomplete-filepath',
+					text: ` (${folderPath})`,
+				});
+			}
+
+			itemEl.addEventListener('click', () => {
+				this.insertTemplateContent(file);
+			});
+
+			itemEl.addEventListener('mouseenter', () => {
+				itemEl.addClass('hover');
+			});
+
+			itemEl.addEventListener('mouseleave', () => {
+				itemEl.removeClass('hover');
+			});
+
+			itemEl.addEventListener('keydown', (event: KeyboardEvent) => {
+				if (event.key === 'Enter') {
+					this.insertTemplateContent(file);
+					event.preventDefault();
+				} else if (event.key === 'ArrowDown') {
+					const nextItem = itemEl.nextElementSibling as HTMLElement;
+					if (nextItem) nextItem.focus();
+					event.preventDefault();
+				} else if (event.key === 'ArrowUp') {
+					const prevItem = itemEl.previousElementSibling as HTMLElement;
+					if (prevItem) prevItem.focus();
+					event.preventDefault();
+				}
+			});
+		});
+
+		this.autocompleteContainer.style.display = 'block';
+	}
+
+	/**
+	 * テンプレートファイルの内容を入力欄に展開
+	 */
+	private async insertTemplateContent(file: TFile) {
+		if (!this.inputField || !this.autocompleteContainer) return;
+
+		try {
+			const content = await this.app.vault.read(file);
+			this.inputField.value = content + '\n';
+			const newPos = this.inputField.value.length;
+			this.inputField.selectionStart = newPos;
+			this.inputField.selectionEnd = newPos;
+			this.autocompleteContainer.style.display = 'none';
+			this.inputField.focus();
+		} catch (error) {
+			new Notice(`テンプレート読み込みエラー: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	/**

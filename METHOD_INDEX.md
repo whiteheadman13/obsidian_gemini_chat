@@ -167,6 +167,10 @@
 - method: ChatView.renderFolderAutocompleteList(folders: string[]) => Renders UI content for the current state.
 - method: ChatView.generateTitleSuggestionPrompt(response: string): string => Generates a computed result from the given inputs.
 - method: ChatView.insertFolderSelection(folderPath: string) => Handles insert folder selection logic for this module.
+- method: ChatView.findSlashTokenAtCursor(text: string, cursorPos: number): string | null => Returns the active /token at cursor when input starts with /.
+- method: ChatView.filterTemplateFiles(pattern: string): TFile[] => Filters prompt template files by pattern within the configured folder.
+- method: ChatView.renderTemplateAutocompleteList(files: TFile[]) => Renders the /template autocomplete popup list.
+- method: ChatView.insertTemplateContent(file: TFile): Promise<void> => Reads the template file and replaces the input field content with its body.
 - method: ChatView.openAttachmentSelector() => Opens the target view or file in the workspace.
 - method: ChatView.insertAttachmentReference(filePath: string) => Handles insert attachment reference logic for this module.
 - method: ChatView.setupDragAndDrop(container: HTMLElement) => Updates up drag and drop.

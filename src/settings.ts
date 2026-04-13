@@ -30,6 +30,7 @@ export interface MyPluginSettings {
 	qaMaxTotalChars: number;
 	qaEnableVectorRerank: boolean;
 	noteSplitCriteria: string;
+	chatPromptTemplateFolder: string;
 }
 
 export const DEFAULT_NOTE_SPLIT_CRITERIA = `以下の知識タイプごとに分割してください（該当するものだけ）:
@@ -69,6 +70,7 @@ export const DEFAULT_SETTINGS: MyPluginSettings = {
 	qaMaxTotalChars: 5000,
 	qaEnableVectorRerank: true,
 	noteSplitCriteria: DEFAULT_NOTE_SPLIT_CRITERIA,
+	chatPromptTemplateFolder: '',
 }
 
 export class SampleSettingTab extends PluginSettingTab {
@@ -119,6 +121,27 @@ export class SampleSettingTab extends PluginSettingTab {
 					this.plugin.settings.chatHistoryFolder = value;
 					await this.plugin.saveSettings();
 				}));
+
+		new Setting(containerEl)
+			.setName('チャットテンプレートフォルダ')
+			.setDesc('チャット欄で "/" 入力時に表示するプロンプトテンプレートの格納フォルダ。空欄の場合はVault全体が対象です。')
+			.addText(text => {
+				text
+					.setPlaceholder('例: Prompts')
+					.setValue(this.plugin.settings.chatPromptTemplateFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.chatPromptTemplateFolder = value.trim();
+						await this.plugin.saveSettings();
+					});
+
+				text.inputEl.addEventListener('focus', () => {
+					this.showFolderDropdown(text.inputEl, this.getAllFoldersInVault());
+				});
+
+				text.inputEl.addEventListener('input', () => {
+					this.showFolderDropdown(text.inputEl, this.getAllFoldersInVault());
+				});
+			});
 
 		containerEl.createEl('h2', { text: 'ノートQ&A' });
 
@@ -674,6 +697,10 @@ export class SampleSettingTab extends PluginSettingTab {
 				display: none;
 			`;
 			inputElement.parentElement?.appendChild(dropdown);
+
+			dropdown.addEventListener('mousedown', (e) => {
+				e.preventDefault();
+			});
 		}
 
 		dropdown.innerHTML = '';
@@ -758,6 +785,10 @@ export class SampleSettingTab extends PluginSettingTab {
 				display: none;
 			`;
 			inputElement.parentElement?.appendChild(dropdown);
+
+			dropdown.addEventListener('mousedown', (e) => {
+				e.preventDefault();
+			});
 		}
 
 		dropdown.innerHTML = '';
@@ -793,8 +824,7 @@ export class SampleSettingTab extends PluginSettingTab {
 			item.addEventListener('click', async () => {
 				inputElement.value = folder;
 				dropdown!.style.display = 'none';
-				this.plugin.settings.agentTemplateFolder = folder;
-				await this.plugin.saveSettings();
+				inputElement.dispatchEvent(new Event('input'));
 				inputElement.focus();
 			});
 		});

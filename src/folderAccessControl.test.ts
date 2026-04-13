@@ -32,6 +32,7 @@ function createSettings(overrides: Partial<MyPluginSettings> = {}): MyPluginSett
 		qaMaxTotalChars: 5000,
 		qaEnableVectorRerank: true,
 		noteSplitCriteria: '',
+		chatPromptTemplateFolder: '',
 		...overrides,
 	};
 }
